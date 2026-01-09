@@ -82,12 +82,12 @@ npm run dev
 
 # Install and run the API (in another terminal)
 cd apps/api
-pip install -e ".[dev]"
+uv pip install -e ".[dev]"
 uvicorn app.main:app --reload
 
 # Run the worker (in another terminal)
 cd workers/runner
-pip install -e ".[dev]"
+uv pip install -e ".[dev]"
 python -m runner.worker
 ```
 

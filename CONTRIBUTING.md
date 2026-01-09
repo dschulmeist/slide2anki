@@ -18,8 +18,8 @@ Thank you for your interest in contributing to slide2anki! This document provide
 # Or manually:
 docker-compose -f infra/docker/docker-compose.yml up -d
 cd apps/web && npm install && npm run dev
-cd apps/api && pip install -e ".[dev]" && uvicorn app.main:app --reload
-cd workers/runner && pip install -e ".[dev]" && python -m runner.worker
+cd apps/api && uv pip install -e ".[dev]" && uvicorn app.main:app --reload
+cd workers/runner && uv pip install -e ".[dev]" && python -m runner.worker
 ```
 
 ## Project Structure
