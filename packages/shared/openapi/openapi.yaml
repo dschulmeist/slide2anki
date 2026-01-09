@@ -1,0 +1,655 @@
+openapi: 3.1.0
+info:
+  title: slide2anki API
+  description: API for converting lecture slides to Anki flashcards
+  version: 0.1.0
+  license:
+    name: Source Available
+    url: https://github.com/yourusername/slide2anki/blob/main/LICENSE
+
+servers:
+  - url: http://localhost:8000
+    description: Local development server
+
+tags:
+  - name: health
+    description: Health check endpoints
+  - name: decks
+    description: Deck management
+  - name: uploads
+    description: File uploads
+  - name: jobs
+    description: Processing jobs
+  - name: review
+    description: Card review
+  - name: exports
+    description: Deck exports
+
+paths:
+  /api/v1/health:
+    get:
+      tags: [health]
+      summary: Health check
+      operationId: healthCheck
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /api/v1/decks:
+    get:
+      tags: [decks]
+      summary: List all decks
+      operationId: listDecks
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: List of decks
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeckListResponse'
+
+    post:
+      tags: [decks]
+      summary: Create a new deck
+      operationId: createDeck
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateDeckRequest'
+      responses:
+        '201':
+          description: Deck created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Deck'
+
+  /api/v1/decks/{deck_id}:
+    get:
+      tags: [decks]
+      summary: Get a deck by ID
+      operationId: getDeck
+      parameters:
+        - name: deck_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Deck details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Deck'
+        '404':
+          description: Deck not found
+
+    delete:
+      tags: [decks]
+      summary: Delete a deck
+      operationId: deleteDeck
+      parameters:
+        - name: deck_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Deck deleted
+        '404':
+          description: Deck not found
+
+  /api/v1/uploads:
+    post:
+      tags: [uploads]
+      summary: Upload a PDF file
+      operationId: uploadPdf
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+                - deck_id
+              properties:
+                file:
+                  type: string
+                  format: binary
+                deck_id:
+                  type: string
+                  format: uuid
+      responses:
+        '201':
+          description: Upload successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Upload'
+        '400':
+          description: Invalid file
+
+  /api/v1/jobs:
+    get:
+      tags: [jobs]
+      summary: List jobs
+      operationId: listJobs
+      parameters:
+        - name: deck_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/JobStatus'
+      responses:
+        '200':
+          description: List of jobs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobListResponse'
+
+    post:
+      tags: [jobs]
+      summary: Create a new processing job
+      operationId: createJob
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateJobRequest'
+      responses:
+        '201':
+          description: Job created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+
+  /api/v1/jobs/{job_id}:
+    get:
+      tags: [jobs]
+      summary: Get job status
+      operationId: getJob
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Job details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+        '404':
+          description: Job not found
+
+  /api/v1/jobs/{job_id}/progress:
+    get:
+      tags: [jobs]
+      summary: Get job progress (SSE stream)
+      operationId: getJobProgress
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: SSE stream of progress updates
+          content:
+            text/event-stream:
+              schema:
+                type: string
+
+  /api/v1/decks/{deck_id}/cards:
+    get:
+      tags: [review]
+      summary: Get cards for review
+      operationId: getCards
+      parameters:
+        - name: deck_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/CardStatus'
+      responses:
+        '200':
+          description: List of cards
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CardListResponse'
+
+  /api/v1/cards/{card_id}:
+    patch:
+      tags: [review]
+      summary: Update a card
+      operationId: updateCard
+      parameters:
+        - name: card_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCardRequest'
+      responses:
+        '200':
+          description: Card updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Card'
+        '404':
+          description: Card not found
+
+  /api/v1/decks/{deck_id}/exports:
+    post:
+      tags: [exports]
+      summary: Export a deck
+      operationId: exportDeck
+      parameters:
+        - name: deck_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExportRequest'
+      responses:
+        '201':
+          description: Export created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Export'
+
+  /api/v1/exports/{export_id}/download:
+    get:
+      tags: [exports]
+      summary: Download an export
+      operationId: downloadExport
+      parameters:
+        - name: export_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Export file
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '404':
+          description: Export not found
+
+components:
+  schemas:
+    HealthResponse:
+      type: object
+      required:
+        - status
+        - version
+      properties:
+        status:
+          type: string
+          enum: [healthy, degraded, unhealthy]
+        version:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+
+    Deck:
+      type: object
+      required:
+        - id
+        - name
+        - status
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        status:
+          $ref: '#/components/schemas/DeckStatus'
+        card_count:
+          type: integer
+        pending_review_count:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    DeckStatus:
+      type: string
+      enum: [empty, processing, ready, exported]
+
+    CreateDeckRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        tags:
+          type: array
+          items:
+            type: string
+
+    DeckListResponse:
+      type: object
+      required:
+        - items
+        - total
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Deck'
+        total:
+          type: integer
+
+    Upload:
+      type: object
+      required:
+        - id
+        - deck_id
+        - filename
+        - page_count
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        deck_id:
+          type: string
+          format: uuid
+        filename:
+          type: string
+        page_count:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+
+    Job:
+      type: object
+      required:
+        - id
+        - deck_id
+        - status
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        deck_id:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/JobStatus'
+        progress:
+          type: number
+          minimum: 0
+          maximum: 100
+        current_step:
+          type: string
+        error:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        started_at:
+          type: string
+          format: date-time
+        finished_at:
+          type: string
+          format: date-time
+
+    JobStatus:
+      type: string
+      enum: [pending, running, completed, failed, cancelled]
+
+    CreateJobRequest:
+      type: object
+      required:
+        - deck_id
+      properties:
+        deck_id:
+          type: string
+          format: uuid
+        options:
+          $ref: '#/components/schemas/JobOptions'
+
+    JobOptions:
+      type: object
+      properties:
+        max_cards_per_slide:
+          type: integer
+          minimum: 1
+          maximum: 20
+          default: 5
+        model_backend:
+          type: string
+          enum: [openai, ollama]
+          default: openai
+        model_name:
+          type: string
+
+    JobListResponse:
+      type: object
+      required:
+        - items
+        - total
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Job'
+        total:
+          type: integer
+
+    Card:
+      type: object
+      required:
+        - id
+        - deck_id
+        - front
+        - back
+        - status
+      properties:
+        id:
+          type: string
+          format: uuid
+        deck_id:
+          type: string
+          format: uuid
+        slide_index:
+          type: integer
+        front:
+          type: string
+        back:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+        flags:
+          type: array
+          items:
+            type: string
+        evidence:
+          $ref: '#/components/schemas/Evidence'
+        status:
+          $ref: '#/components/schemas/CardStatus'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CardStatus:
+      type: string
+      enum: [pending, approved, rejected]
+
+    Evidence:
+      type: object
+      properties:
+        slide_index:
+          type: integer
+        bbox:
+          $ref: '#/components/schemas/BoundingBox'
+        crop_url:
+          type: string
+          format: uri
+
+    BoundingBox:
+      type: object
+      required:
+        - x
+        - y
+        - width
+        - height
+      properties:
+        x:
+          type: number
+        y:
+          type: number
+        width:
+          type: number
+        height:
+          type: number
+
+    UpdateCardRequest:
+      type: object
+      properties:
+        front:
+          type: string
+        back:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        status:
+          $ref: '#/components/schemas/CardStatus'
+
+    CardListResponse:
+      type: object
+      required:
+        - items
+        - total
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Card'
+        total:
+          type: integer
+
+    Export:
+      type: object
+      required:
+        - id
+        - deck_id
+        - type
+        - status
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        deck_id:
+          type: string
+          format: uuid
+        type:
+          $ref: '#/components/schemas/ExportType'
+        status:
+          type: string
+          enum: [pending, completed, failed]
+        download_url:
+          type: string
+          format: uri
+        created_at:
+          type: string
+          format: date-time
+
+    ExportType:
+      type: string
+      enum: [tsv, apkg]
+
+    ExportRequest:
+      type: object
+      required:
+        - type
+      properties:
+        type:
+          $ref: '#/components/schemas/ExportType'
+        include_rejected:
+          type: boolean
+          default: false

@@ -1,0 +1,13 @@
+{
+  "name": "@slide2anki/shared",
+  "version": "0.1.0",
+  "private": true,
+  "main": "ts-client/index.ts",
+  "types": "ts-client/index.ts",
+  "scripts": {
+    "generate": "openapi-typescript openapi/openapi.yaml -o ts-client/index.ts"
+  },
+  "devDependencies": {
+    "openapi-typescript": "^6.7.5"
+  }
+}

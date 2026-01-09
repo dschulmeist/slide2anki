@@ -1,0 +1,149 @@
+version: '3.8'
+
+services:
+  # PostgreSQL database
+  postgres:
+    image: postgres:16-alpine
+    container_name: slide2anki-postgres
+    environment:
+      POSTGRES_USER: slide2anki
+      POSTGRES_PASSWORD: slide2anki
+      POSTGRES_DB: slide2anki
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U slide2anki"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Redis for job queue
+  redis:
+    image: redis:7-alpine
+    container_name: slide2anki-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # MinIO for S3-compatible object storage
+  minio:
+    image: minio/minio:latest
+    container_name: slide2anki-minio
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Create MinIO bucket on startup
+  minio-setup:
+    image: minio/mc:latest
+    container_name: slide2anki-minio-setup
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 minioadmin minioadmin;
+      mc mb local/slide2anki --ignore-existing;
+      mc anonymous set download local/slide2anki/public;
+      exit 0;
+      "
+
+  # FastAPI backend
+  api:
+    build:
+      context: ../../
+      dockerfile: infra/docker/api.Dockerfile
+    container_name: slide2anki-api
+    environment:
+      DATABASE_URL: postgresql://slide2anki:slide2anki@postgres:5432/slide2anki
+      REDIS_URL: redis://redis:6379
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      MINIO_BUCKET: slide2anki
+      MINIO_SECURE: "false"
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../../apps/api:/app
+      - ../../packages/core:/packages/core
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # Background worker
+  worker:
+    build:
+      context: ../../
+      dockerfile: infra/docker/worker.Dockerfile
+    container_name: slide2anki-worker
+    environment:
+      DATABASE_URL: postgresql://slide2anki:slide2anki@postgres:5432/slide2anki
+      REDIS_URL: redis://redis:6379
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      MINIO_BUCKET: slide2anki
+      MINIO_SECURE: "false"
+    volumes:
+      - ../../workers/runner:/app
+      - ../../packages/core:/packages/core
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    command: python -m runner.worker
+
+  # Next.js frontend (optional - can run locally for hot reload)
+  web:
+    build:
+      context: ../../
+      dockerfile: infra/docker/web.Dockerfile
+    container_name: slide2anki-web
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+      NEXT_PUBLIC_MINIO_URL: http://localhost:9000
+    ports:
+      - "3000:3000"
+    volumes:
+      - ../../apps/web:/app
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      - api
+    command: npm run dev
+    profiles:
+      - full  # Only start with --profile full
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:
