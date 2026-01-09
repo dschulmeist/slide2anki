@@ -1,3 +1,5 @@
+"""MinIO-backed storage helpers for uploads and exports."""
+
 from io import BytesIO
 
 from minio import Minio
@@ -77,3 +79,15 @@ async def delete_file(object_key: str) -> None:
     """Delete a file from storage."""
     client = get_client()
     client.remove_object(settings.minio_bucket, object_key)
+
+
+async def object_exists(object_key: str) -> bool:
+    """Check whether an object exists in storage."""
+    client = get_client()
+    try:
+        client.stat_object(settings.minio_bucket, object_key)
+        return True
+    except S3Error as exc:
+        if exc.code in {"NoSuchKey", "NoSuchObject"}:
+            return False
+        raise

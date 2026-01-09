@@ -21,8 +21,7 @@ def export_node(state: dict[str, Any]) -> dict[str, Any]:
 
     # Filter to approved or pending cards (exclude rejected)
     export_cards = [
-        c for c in cards
-        if c.status in (CardStatus.PENDING, CardStatus.APPROVED)
+        c for c in cards if c.status in (CardStatus.PENDING, CardStatus.APPROVED)
     ]
 
     return {

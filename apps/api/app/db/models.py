@@ -1,3 +1,5 @@
+"""Database models for the slide2anki API."""
+
 import uuid
 from datetime import datetime
 from typing import Optional
@@ -23,9 +25,7 @@ class Deck(Base):
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     status: Mapped[str] = mapped_column(String(50), default="created")
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     # Relationships
     uploads: Mapped[list["Upload"]] = relationship(
@@ -58,12 +58,13 @@ class Upload(Base):
     )
     pdf_object_key: Mapped[str] = mapped_column(String(512), nullable=False)
     page_count: Mapped[int] = mapped_column(Integer, default=0)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     # Relationships
     deck: Mapped["Deck"] = relationship(back_populates="uploads")
+    jobs: Mapped[list["Job"]] = relationship(
+        back_populates="upload", cascade="all, delete-orphan"
+    )
 
 
 class Slide(Base):
@@ -98,21 +99,19 @@ class Job(Base):
     deck_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("decks.id"), nullable=False
     )
+    upload_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("uploads.id"), nullable=True
+    )
     status: Mapped[str] = mapped_column(String(50), default="pending")
     progress: Mapped[int] = mapped_column(Integer, default=0)
     current_step: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    logs_object_key: Mapped[Optional[str]] = mapped_column(
-        String(512), nullable=True
-    )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow
-    )
-    finished_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime, nullable=True
-    )
+    logs_object_key: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
     # Relationships
     deck: Mapped["Deck"] = relationship(back_populates="jobs")
+    upload: Mapped["Upload"] = relationship(back_populates="jobs")
 
 
 class Claim(Base):
@@ -171,9 +170,7 @@ class Export(Base):
     )
     type: Mapped[str] = mapped_column(String(50), nullable=False)
     object_key: Mapped[str] = mapped_column(String(512), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     # Relationships
     deck: Mapped["Deck"] = relationship(back_populates="exports")

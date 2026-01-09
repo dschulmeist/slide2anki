@@ -1,10 +1,9 @@
 """Extract node: Identify claims from slides using vision model."""
 
-import base64
 from typing import Any, Callable
 
 from slide2anki_core.model_adapters.base import BaseModelAdapter
-from slide2anki_core.schemas.claims import Claim, ClaimKind, Evidence
+from slide2anki_core.schemas.claims import BoundingBox, Claim, ClaimKind, Evidence
 from slide2anki_core.schemas.document import Slide
 
 EXTRACT_PROMPT = """Analyze this lecture slide and extract atomic claims.
@@ -13,6 +12,7 @@ For each claim, identify:
 1. Type: definition, fact, process, relationship, example, formula, or other
 2. Statement: A clear, self-contained statement of the claim
 3. Confidence: How confident you are (0.0-1.0)
+4. Evidence: The slide region where the claim appears
 
 Focus on:
 - Definitions of key terms
@@ -21,15 +21,25 @@ Focus on:
 - Relationships between concepts
 - Formulas and equations
 
-Output format (JSON array):
-[
-  {
-    "kind": "definition",
-    "statement": "Mitochondria are organelles that produce ATP through cellular respiration.",
-    "confidence": 0.95
-  },
-  ...
-]
+Output format (JSON object with a "claims" array):
+{
+  "claims": [
+    {
+      "kind": "definition",
+      "statement": "Mitochondria are organelles that produce ATP through cellular respiration.",
+      "confidence": 0.95,
+      "evidence": {
+        "bbox": {"x": 0.12, "y": 0.34, "width": 0.52, "height": 0.18},
+        "text_snippet": "Mitochondria produce ATP through cellular respiration"
+      }
+    }
+  ]
+}
+
+Evidence rules:
+- bbox coordinates are normalized 0-1 relative to the slide image
+- include only evidence that is explicitly visible on the slide
+- if unsure about bbox, omit the evidence field entirely
 
 Only include claims that are explicitly visible on the slide.
 Do not infer or add information not shown.
@@ -81,11 +91,24 @@ def create_extract_node(
 
                 # Parse claims from response
                 for claim_data in response:
+                    evidence_data = claim_data.get("evidence") or {}
+                    bbox_data = evidence_data.get("bbox")
+                    # Keep extraction resilient to malformed evidence payloads.
+                    bbox = None
+                    if isinstance(bbox_data, dict):
+                        try:
+                            bbox = BoundingBox(**bbox_data)
+                        except Exception:
+                            bbox = None
                     claim = Claim(
                         kind=ClaimKind(claim_data.get("kind", "other")),
                         statement=claim_data["statement"],
                         confidence=claim_data.get("confidence", 1.0),
-                        evidence=Evidence(slide_index=slide.page_index),
+                        evidence=Evidence(
+                            slide_index=slide.page_index,
+                            bbox=bbox,
+                            text_snippet=evidence_data.get("text_snippet"),
+                        ),
                     )
                     all_claims.append(claim)
 

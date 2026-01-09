@@ -1,3 +1,5 @@
+"""Progress tracking helpers for jobs."""
+
 from datetime import datetime
 from typing import Optional
 
@@ -18,9 +20,7 @@ async def update_job_progress(
     """Update job progress in database and publish to Redis."""
     from uuid import UUID
 
-    result = await db.execute(
-        select(models.Job).where(models.Job.id == UUID(job_id))
-    )
+    result = await db.execute(select(models.Job).where(models.Job.id == UUID(job_id)))
     job = result.scalar_one_or_none()
 
     if job:

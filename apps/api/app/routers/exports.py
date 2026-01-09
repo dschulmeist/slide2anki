@@ -1,3 +1,5 @@
+"""Export routes for generating Anki files."""
+
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -7,6 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import models
 from app.db.session import get_db
 from app.schemas.api import ExportRequest, ExportResponse, ExportListResponse
+from app.services.queue import enqueue_export_job
+from app.services.storage import get_presigned_url, object_exists
 
 router = APIRouter()
 
@@ -19,25 +23,23 @@ async def export_deck(
 ) -> ExportResponse:
     """Export approved cards from a deck."""
     # Verify deck exists
-    result = await db.execute(
-        select(models.Deck).where(models.Deck.id == deck_id)
-    )
+    result = await db.execute(select(models.Deck).where(models.Deck.id == deck_id))
     deck = result.scalar_one_or_none()
     if not deck:
         raise HTTPException(status_code=404, detail="Deck not found")
 
     # Get approved cards
-    cards_result = await db.execute(
-        select(models.CardDraft)
-        .where(models.CardDraft.deck_id == deck_id)
-        .where(models.CardDraft.status == "approved")
-    )
+    cards_query = select(models.CardDraft).where(models.CardDraft.deck_id == deck_id)
+    if not request.include_rejected:
+        cards_query = cards_query.where(models.CardDraft.status == "approved")
+
+    cards_result = await db.execute(cards_query)
     cards = cards_result.scalars().all()
 
     if not cards:
         raise HTTPException(status_code=400, detail="No approved cards to export")
 
-    # Generate export
+    # Generate export record and enqueue background processing
     object_key = f"exports/{deck_id}/{deck.name}.{request.format}"
 
     # Create export record
@@ -50,8 +52,7 @@ async def export_deck(
     await db.commit()
     await db.refresh(export)
 
-    # TODO: Actually generate and upload the export file
-    # For now, just return the record
+    await enqueue_export_job(str(export.id))
 
     return ExportResponse(
         export_id=export.id,
@@ -101,5 +102,7 @@ async def download_export(
     if not export:
         raise HTTPException(status_code=404, detail="Export not found")
 
-    # TODO: Generate signed URL from MinIO
-    return {"download_url": f"http://localhost:9000/{export.object_key}"}
+    if not await object_exists(export.object_key):
+        raise HTTPException(status_code=409, detail="Export not ready")
+
+    return {"download_url": await get_presigned_url(export.object_key)}

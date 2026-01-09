@@ -1,43 +1,122 @@
+/**
+ * Dashboard view for tracking background jobs.
+ */
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Clock, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 
-interface Job {
-  id: string;
-  deck_id: string;
+import { api, Deck, Job } from '@/lib/api';
+
+interface JobWithDeck extends Job {
   deck_name: string;
-  status: 'pending' | 'running' | 'completed' | 'failed';
-  progress: number;
-  current_step: string;
-  created_at: string;
 }
 
-// Mock data for demo
-const mockJobs: Job[] = [
-  {
-    id: '1',
-    deck_id: 'd1',
-    deck_name: 'Biology 101 - Cell Structure',
-    status: 'running',
-    progress: 45,
-    current_step: 'Extracting claims from slide 5/12',
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: '2',
-    deck_id: 'd2',
-    deck_name: 'History - World War II',
-    status: 'completed',
-    progress: 100,
-    current_step: 'Done',
-    created_at: new Date(Date.now() - 3600000).toISOString(),
-  },
-];
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
+/**
+ * Render the dashboard with job status updates.
+ */
 export default function DashboardPage() {
-  const [jobs, setJobs] = useState<Job[]>(mockJobs);
+  const [jobs, setJobs] = useState<JobWithDeck[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const streamsRef = useRef<Map<string, EventSource>>(new Map());
 
+  /**
+   * Load jobs and map deck names for display.
+   */
+  const loadJobs = useCallback(async () => {
+    setIsLoading(true);
+    setErrorMessage(null);
+
+    try {
+      const [jobList, deckList] = await Promise.all([
+        api.listJobs(),
+        api.listDecks(),
+      ]);
+      const deckMap = new Map<string, Deck>(
+        deckList.map((deck) => [deck.id, deck])
+      );
+      const hydratedJobs = jobList.map((job) => ({
+        ...job,
+        deck_name: deckMap.get(job.deck_id)?.name ?? 'Untitled deck',
+      }));
+      setJobs(hydratedJobs);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Failed to load jobs';
+      setErrorMessage(message);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadJobs();
+    const interval = setInterval(loadJobs, 5000);
+    return () => clearInterval(interval);
+  }, [loadJobs]);
+
+  /**
+   * Keep streaming connections for running jobs only.
+   */
+  useEffect(() => {
+    const activeJobIds = new Set(
+      jobs.filter((job) => job.status === 'running').map((job) => job.id)
+    );
+    const streams = streamsRef.current;
+
+    jobs.forEach((job) => {
+      if (job.status !== 'running' || streams.has(job.id)) {
+        return;
+      }
+
+      const source = new EventSource(
+        `${API_BASE}/api/v1/jobs/${job.id}/stream`
+      );
+      source.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data) as {
+            progress: number;
+            step: string;
+          };
+          setJobs((current) =>
+            current.map((item) =>
+              item.id === job.id
+                ? { ...item, progress: data.progress, current_step: data.step }
+                : item
+            )
+          );
+        } catch {
+          return;
+        }
+      };
+      source.onerror = () => {
+        source.close();
+        streams.delete(job.id);
+      };
+      streams.set(job.id, source);
+    });
+
+    for (const [jobId, source] of streams) {
+      if (!activeJobIds.has(jobId)) {
+        source.close();
+        streams.delete(jobId);
+      }
+    }
+
+    return () => {
+      for (const source of streams.values()) {
+        source.close();
+      }
+      streams.clear();
+    };
+  }, [jobs]);
+
+  /**
+   * Render a status icon for the current job.
+   */
   const getStatusIcon = (status: Job['status']) => {
     switch (status) {
       case 'pending':
@@ -48,15 +127,21 @@ export default function DashboardPage() {
         return <CheckCircle className="w-5 h-5 text-green-500" />;
       case 'failed':
         return <AlertCircle className="w-5 h-5 text-red-500" />;
+      case 'cancelled':
+        return <AlertCircle className="w-5 h-5 text-gray-400" />;
     }
   };
 
+  /**
+   * Render a status badge for the current job.
+   */
   const getStatusBadge = (status: Job['status']) => {
     const styles = {
       pending: 'bg-gray-100 text-gray-700',
       running: 'bg-primary-100 text-primary-700',
       completed: 'bg-green-100 text-green-700',
       failed: 'bg-red-100 text-red-700',
+      cancelled: 'bg-gray-100 text-gray-700',
     };
     return (
       <span className={`px-2 py-1 text-xs font-medium rounded-full ${styles[status]}`}>
@@ -82,7 +167,15 @@ export default function DashboardPage() {
           <h2 className="font-semibold text-gray-900">Recent Jobs</h2>
         </div>
 
-        {jobs.length === 0 ? (
+        {errorMessage ? (
+          <div className="px-6 py-12 text-center text-red-600">
+            {errorMessage}
+          </div>
+        ) : isLoading ? (
+          <div className="px-6 py-12 text-center text-gray-500">
+            Loading jobs...
+          </div>
+        ) : jobs.length === 0 ? (
           <div className="px-6 py-12 text-center text-gray-500">
             No jobs yet. Upload a PDF to get started.
           </div>
@@ -99,17 +192,17 @@ export default function DashboardPage() {
                     {getStatusBadge(job.status)}
                   </div>
                   <a
-                    href={`/decks/${job.deck_id}`}
+                    href={`/review?deckId=${job.deck_id}`}
                     className="text-sm text-primary-600 hover:text-primary-700"
                   >
-                    View Deck
+                    Review Deck
                   </a>
                 </div>
 
                 {job.status === 'running' && (
                   <div className="mt-3">
                     <div className="flex items-center justify-between text-sm text-gray-600 mb-1">
-                      <span>{job.current_step}</span>
+                      <span>{job.current_step || 'Working...'}</span>
                       <span>{job.progress}%</span>
                     </div>
                     <div className="w-full bg-gray-200 rounded-full h-2">

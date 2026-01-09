@@ -1,3 +1,5 @@
+"""Pydantic schemas for API request/response models."""
+
 from datetime import datetime
 from typing import Optional
 from uuid import UUID
@@ -17,6 +19,8 @@ class DeckResponse(BaseModel):
     name: str
     status: str
     created_at: datetime
+    card_count: int = 0
+    pending_review: int = 0
 
 
 class DeckListResponse(BaseModel):
@@ -29,11 +33,13 @@ class UploadResponse(BaseModel):
     deck_id: UUID
     filename: str
     object_key: str
+    job_id: UUID
 
 
 # Job schemas
 class JobCreate(BaseModel):
     deck_id: UUID
+    upload_id: Optional[UUID] = None
 
 
 class JobResponse(BaseModel):
@@ -41,6 +47,7 @@ class JobResponse(BaseModel):
 
     id: UUID
     deck_id: UUID
+    upload_id: Optional[UUID] = None
     status: str
     progress: int
     current_step: Optional[str] = None
@@ -62,8 +69,8 @@ class CardDraftResponse(BaseModel):
     back: str
     tags: list[str] = []
     confidence: float
-    flags_json: Optional[dict] = None
-    evidence_json: Optional[dict] = None
+    flags_json: Optional[list] = None
+    evidence_json: Optional[list] = None
     status: str
 
 
@@ -86,6 +93,7 @@ class SlideResponse(BaseModel):
     deck_id: UUID
     page_index: int
     image_object_key: str
+    image_url: Optional[str] = None
 
 
 class SlideListResponse(BaseModel):
@@ -95,6 +103,7 @@ class SlideListResponse(BaseModel):
 # Export schemas
 class ExportRequest(BaseModel):
     format: str  # "tsv" or "apkg"
+    include_rejected: bool = False
 
 
 class ExportResponse(BaseModel):

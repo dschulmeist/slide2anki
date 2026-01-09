@@ -1,14 +1,61 @@
+/**
+ * Landing page with PDF upload flow.
+ */
 'use client';
 
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { Upload, FileText, Zap, CheckCircle } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 
+import { api } from '@/lib/api';
+import { useStore } from '@/lib/store';
+
+/**
+ * Normalize a PDF filename into a human-readable deck name.
+ */
+const normalizeDeckName = (filename: string): string => {
+  return filename.replace(/\.pdf$/i, '').replace(/[_-]+/g, ' ').trim();
+};
+
+/**
+ * Render the upload landing page.
+ */
 export default function Home() {
-  const onDrop = useCallback((acceptedFiles: File[]) => {
-    // TODO: Handle file upload
-    console.log('Files:', acceptedFiles);
-  }, []);
+  const router = useRouter();
+  const setActiveJobId = useStore((state) => state.setActiveJobId);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+
+  /**
+   * Handle the uploaded file by creating a deck and starting a job.
+   */
+  const onDrop = useCallback(
+    async (acceptedFiles: File[]) => {
+      const file = acceptedFiles[0];
+      if (!file || isUploading) {
+        return;
+      }
+
+      setErrorMessage(null);
+      setIsUploading(true);
+
+      try {
+        const deckName = normalizeDeckName(file.name || 'Untitled Deck');
+        const deck = await api.createDeck(deckName);
+        const upload = await api.uploadPdf(deck.id, file);
+        setActiveJobId(upload.job_id);
+        router.push('/dashboard');
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : 'Upload failed';
+        setErrorMessage(message);
+      } finally {
+        setIsUploading(false);
+      }
+    },
+    [isUploading, router, setActiveJobId]
+  );
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -16,6 +63,7 @@ export default function Home() {
       'application/pdf': ['.pdf'],
     },
     maxFiles: 1,
+    disabled: isUploading,
   });
 
   return (
@@ -47,10 +95,16 @@ export default function Home() {
               <p className="text-gray-600 font-medium mb-2">
                 Drag and drop a PDF here, or click to select
               </p>
-              <p className="text-sm text-gray-400">Supports PDF files only</p>
+              <p className="text-sm text-gray-400">
+                {isUploading ? 'Uploading...' : 'Supports PDF files only'}
+              </p>
             </>
           )}
         </div>
+
+        {errorMessage && (
+          <div className="mt-4 text-sm text-red-600">{errorMessage}</div>
+        )}
 
         {/* Features */}
         <div className="grid md:grid-cols-3 gap-8 mt-16">

@@ -67,8 +67,7 @@ def create_critique_node(
 
         # Format cards for prompt
         cards_text = "\n".join(
-            f"{i}. Q: {c.front}\n   A: {c.back}"
-            for i, c in enumerate(cards)
+            f"{i}. Q: {c.front}\n   A: {c.back}" for i, c in enumerate(cards)
         )
         prompt = CRITIQUE_PROMPT.format(cards=cards_text)
 
@@ -89,7 +88,8 @@ def create_critique_node(
 
                     # Add flags
                     flags = [
-                        CardFlag(f) for f in critique_data.get("flags", [])
+                        CardFlag(f)
+                        for f in critique_data.get("flags", [])
                         if f in [e.value for e in CardFlag]
                     ]
                     card.flags = flags

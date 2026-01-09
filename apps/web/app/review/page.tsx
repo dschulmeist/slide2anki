@@ -1,90 +1,167 @@
+/**
+ * Review page for approving and editing generated cards.
+ */
 'use client';
 
-import { useState } from 'react';
-import { ChevronLeft, ChevronRight, Check, X, Edit, Flag } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { ChevronLeft, ChevronRight, Check, X, Flag } from 'lucide-react';
+import { useSearchParams } from 'next/navigation';
 
-interface Card {
-  id: string;
-  front: string;
-  back: string;
-  confidence: number;
-  flags: string[];
-  status: 'pending' | 'approved' | 'rejected';
-  slide_index: number;
-  evidence_bbox: { x: number; y: number; width: number; height: number } | null;
+import { api, CardDraft, Slide } from '@/lib/api';
+
+interface EvidenceBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }
 
-interface Slide {
-  index: number;
-  image_url: string;
-}
+/**
+ * Extract the first evidence box from a card, if present.
+ */
+const getEvidenceBox = (card: CardDraft): EvidenceBox | null => {
+  const evidence = card.evidence_json;
+  if (!Array.isArray(evidence) || evidence.length === 0) {
+    return null;
+  }
+  const first = evidence[0] as { bbox?: EvidenceBox };
+  return first?.bbox ?? null;
+};
 
-// Mock data for demo
-const mockCards: Card[] = [
-  {
-    id: 'c1',
-    front: 'What is the primary function of mitochondria?',
-    back: 'To produce ATP (adenosine triphosphate) through cellular respiration, serving as the "powerhouse" of the cell.',
-    confidence: 0.92,
-    flags: [],
-    status: 'pending',
-    slide_index: 0,
-    evidence_bbox: { x: 100, y: 150, width: 400, height: 200 },
-  },
-  {
-    id: 'c2',
-    front: 'What are the two main stages of cellular respiration?',
-    back: '1. Glycolysis (in cytoplasm)\n2. Oxidative phosphorylation (in mitochondria)',
-    confidence: 0.85,
-    flags: ['may_need_context'],
-    status: 'pending',
-    slide_index: 0,
-    evidence_bbox: { x: 100, y: 400, width: 400, height: 150 },
-  },
-  {
-    id: 'c3',
-    front: 'What is the role of the inner mitochondrial membrane?',
-    back: 'Contains the electron transport chain and ATP synthase, which are essential for oxidative phosphorylation.',
-    confidence: 0.78,
-    flags: [],
-    status: 'pending',
-    slide_index: 1,
-    evidence_bbox: null,
-  },
-];
+/**
+ * Extract the slide index from evidence metadata.
+ */
+const getSlideIndex = (card: CardDraft): number | null => {
+  const evidence = card.evidence_json;
+  if (!Array.isArray(evidence) || evidence.length === 0) {
+    return null;
+  }
+  const first = evidence[0] as { slide_index?: number };
+  return typeof first.slide_index === 'number' ? first.slide_index : null;
+};
 
-const mockSlides: Slide[] = [
-  { index: 0, image_url: '/api/placeholder/800/600' },
-  { index: 1, image_url: '/api/placeholder/800/600' },
-];
+/**
+ * Normalize card flags for display.
+ */
+const getFlags = (card: CardDraft): string[] => {
+  return Array.isArray(card.flags_json)
+    ? card.flags_json.filter((flag): flag is string => typeof flag === 'string')
+    : [];
+};
 
+/**
+ * Render the review experience for a deck.
+ */
 export default function ReviewPage() {
-  const [cards, setCards] = useState<Card[]>(mockCards);
+  const searchParams = useSearchParams();
+  const deckId = searchParams.get('deckId');
+  const [cards, setCards] = useState<CardDraft[]>([]);
+  const [slides, setSlides] = useState<Slide[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [isEditing, setIsEditing] = useState(false);
-  const [editedCard, setEditedCard] = useState<Card | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  /**
+   * Load cards and slides for the selected deck.
+   */
+  const loadReviewData = useCallback(async () => {
+    if (!deckId) {
+      setIsLoading(false);
+      setErrorMessage('Missing deck ID.');
+      return;
+    }
+
+    setIsLoading(true);
+    setErrorMessage(null);
+
+    try {
+      const [cardList, slideList] = await Promise.all([
+        api.listCards(deckId),
+        api.listSlides(deckId),
+      ]);
+      setCards(cardList);
+      setSlides(slideList);
+      setCurrentIndex(0);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Failed to load review data';
+      setErrorMessage(message);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [deckId]);
+
+  useEffect(() => {
+    loadReviewData();
+  }, [loadReviewData]);
 
   const currentCard = cards[currentIndex];
-  const currentSlide = mockSlides.find(s => s.index === currentCard?.slide_index);
-
-  const updateCardStatus = (status: 'approved' | 'rejected') => {
-    setCards(prev =>
-      prev.map((card, i) =>
-        i === currentIndex ? { ...card, status } : card
-      )
-    );
-    // Auto-advance to next pending card
-    const nextPending = cards.findIndex((c, i) => i > currentIndex && c.status === 'pending');
-    if (nextPending !== -1) {
-      setCurrentIndex(nextPending);
-    } else if (currentIndex < cards.length - 1) {
-      setCurrentIndex(currentIndex + 1);
+  const currentSlideIndex = currentCard ? getSlideIndex(currentCard) : null;
+  const evidenceBox = currentCard ? getEvidenceBox(currentCard) : null;
+  const currentSlide = useMemo(() => {
+    if (currentSlideIndex === null) {
+      return null;
     }
-  };
+    return (
+      slides.find((slide) => slide.page_index === currentSlideIndex) || null
+    );
+  }, [currentSlideIndex, slides]);
+
+  /**
+   * Update card status locally and persist to the API.
+   */
+  const updateCardStatus = useCallback(
+    async (status: 'approved' | 'rejected') => {
+      if (!currentCard) {
+        return;
+      }
+      const updated = { status };
+
+      setCards((prev) =>
+        prev.map((card, i) =>
+          i === currentIndex ? { ...card, ...updated } : card
+        )
+      );
+
+      try {
+        await api.updateCard(currentCard.id, updated);
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : 'Failed to update card';
+        setErrorMessage(message);
+      }
+
+      const nextPending = cards.findIndex(
+        (card, i) => i > currentIndex && card.status === 'pending'
+      );
+      if (nextPending !== -1) {
+        setCurrentIndex(nextPending);
+      } else if (currentIndex < cards.length - 1) {
+        setCurrentIndex(currentIndex + 1);
+      }
+    },
+    [cards, currentCard, currentIndex]
+  );
 
   const pendingCount = cards.filter(c => c.status === 'pending').length;
   const approvedCount = cards.filter(c => c.status === 'approved').length;
   const rejectedCount = cards.filter(c => c.status === 'rejected').length;
+
+  if (isLoading) {
+    return (
+      <div className="container mx-auto px-4 py-12 text-center text-gray-500">
+        Loading review data...
+      </div>
+    );
+  }
+
+  if (errorMessage) {
+    return (
+      <div className="container mx-auto px-4 py-12 text-center text-red-600">
+        {errorMessage}
+      </div>
+    );
+  }
 
   if (!currentCard) {
     return (
@@ -121,18 +198,26 @@ export default function ReviewPage() {
         {/* Left: Slide image */}
         <div className="w-1/2 bg-gray-100 p-4 flex items-center justify-center relative">
           <div className="relative max-w-full max-h-full">
-            <div className="bg-gray-300 w-[600px] h-[450px] rounded flex items-center justify-center text-gray-500">
-              Slide {currentCard.slide_index + 1} Preview
-            </div>
+            {currentSlide?.image_url ? (
+              <img
+                src={currentSlide.image_url}
+                alt={`Slide ${currentSlide.page_index + 1}`}
+                className="max-w-full max-h-[450px] rounded"
+              />
+            ) : (
+              <div className="bg-gray-300 w-[600px] h-[450px] rounded flex items-center justify-center text-gray-500">
+                Slide preview unavailable
+              </div>
+            )}
             {/* Evidence highlight overlay would go here */}
-            {currentCard.evidence_bbox && (
+            {evidenceBox && (
               <div
                 className="absolute border-2 border-yellow-400 bg-yellow-200 bg-opacity-30 pointer-events-none"
                 style={{
-                  left: currentCard.evidence_bbox.x * 0.75,
-                  top: currentCard.evidence_bbox.y * 0.75,
-                  width: currentCard.evidence_bbox.width * 0.75,
-                  height: currentCard.evidence_bbox.height * 0.75,
+                  left: `${evidenceBox.x * 100}%`,
+                  top: `${evidenceBox.y * 100}%`,
+                  width: `${evidenceBox.width * 100}%`,
+                  height: `${evidenceBox.height * 100}%`,
                 }}
               />
             )}
@@ -154,7 +239,9 @@ export default function ReviewPage() {
               Card {currentIndex + 1} of {cards.length}
             </span>
             <button
-              onClick={() => setCurrentIndex(Math.min(cards.length - 1, currentIndex + 1))}
+              onClick={() =>
+                setCurrentIndex(Math.min(cards.length - 1, currentIndex + 1))
+              }
               disabled={currentIndex === cards.length - 1}
               className="p-2 rounded hover:bg-gray-100 disabled:opacity-50"
             >
@@ -187,10 +274,10 @@ export default function ReviewPage() {
               <span className="text-gray-500">
                 Confidence: {Math.round(currentCard.confidence * 100)}%
               </span>
-              {currentCard.flags.length > 0 && (
+              {getFlags(currentCard).length > 0 && (
                 <span className="flex items-center gap-1 text-yellow-600">
                   <Flag className="w-4 h-4" />
-                  {currentCard.flags.join(', ')}
+                  {getFlags(currentCard).join(', ')}
                 </span>
               )}
             </div>
@@ -204,13 +291,6 @@ export default function ReviewPage() {
             >
               <X className="w-5 h-5" />
               Reject
-            </button>
-            <button
-              onClick={() => setIsEditing(true)}
-              className="flex-1 flex items-center justify-center gap-2 px-4 py-2 border rounded-lg hover:bg-gray-50"
-            >
-              <Edit className="w-5 h-5" />
-              Edit
             </button>
             <button
               onClick={() => updateCardStatus('approved')}

@@ -1,3 +1,5 @@
+"""Review routes for cards and slides."""
+
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -13,6 +15,7 @@ from app.schemas.api import (
     SlideResponse,
     SlideListResponse,
 )
+from app.services.storage import get_presigned_url
 
 router = APIRouter()
 
@@ -85,6 +88,15 @@ async def list_slides(
         .order_by(models.Slide.page_index)
     )
     slides = result.scalars().all()
-    return SlideListResponse(
-        slides=[SlideResponse.model_validate(s) for s in slides]
-    )
+    slide_responses = []
+    for slide in slides:
+        slide_responses.append(
+            SlideResponse(
+                id=slide.id,
+                deck_id=slide.deck_id,
+                page_index=slide.page_index,
+                image_object_key=slide.image_object_key,
+                image_url=await get_presigned_url(slide.image_object_key),
+            )
+        )
+    return SlideListResponse(slides=slide_responses)

@@ -1,5 +1,8 @@
+"""Queue and progress utilities backed by Redis."""
+
+import asyncio
 import json
-from typing import Optional
+from typing import Any, AsyncGenerator, Literal, Optional, TypedDict
 
 import redis.asyncio as redis
 
@@ -8,6 +11,16 @@ from app.settings import settings
 _redis: Optional[redis.Redis] = None
 
 QUEUE_NAME = "slide2anki:jobs"
+
+TaskKind = Literal["pipeline", "export"]
+
+
+class TaskPayload(TypedDict):
+    """Serialized task payload for the worker queue."""
+
+    kind: TaskKind
+    job_id: Optional[str]
+    export_id: Optional[str]
 
 
 async def get_redis() -> redis.Redis:
@@ -18,20 +31,37 @@ async def get_redis() -> redis.Redis:
     return _redis
 
 
-async def enqueue_job(job_id: str) -> None:
-    """Add a job to the processing queue."""
+async def enqueue_pipeline_job(job_id: str) -> None:
+    """Add a pipeline job to the processing queue."""
     client = await get_redis()
-    await client.rpush(QUEUE_NAME, json.dumps({"job_id": job_id}))
+    payload: TaskPayload = {
+        "kind": "pipeline",
+        "job_id": job_id,
+        "export_id": None,
+    }
+    await client.rpush(QUEUE_NAME, json.dumps(payload))
 
 
-async def dequeue_job() -> Optional[str]:
-    """Get the next job from the queue (blocking)."""
+async def enqueue_export_job(export_id: str) -> None:
+    """Add an export job to the processing queue."""
+    client = await get_redis()
+    payload: TaskPayload = {
+        "kind": "export",
+        "job_id": None,
+        "export_id": export_id,
+    }
+    await client.rpush(QUEUE_NAME, json.dumps(payload))
+
+
+async def dequeue_task() -> Optional[TaskPayload]:
+    """Get the next task from the queue (blocking)."""
     client = await get_redis()
     result = await client.blpop(QUEUE_NAME, timeout=5)
     if result:
         _, data = result
         payload = json.loads(data)
-        return payload.get("job_id")
+        if isinstance(payload, dict):
+            return payload  # type: ignore[return-value]
     return None
 
 
@@ -42,3 +72,34 @@ async def publish_progress(job_id: str, progress: int, step: str) -> None:
         f"slide2anki:progress:{job_id}",
         json.dumps({"progress": progress, "step": step}),
     )
+
+
+async def subscribe_progress(
+    job_id: str,
+    poll_interval: float = 0.25,
+) -> AsyncGenerator[dict[str, Any], None]:
+    """Subscribe to progress events for a job."""
+    client = await get_redis()
+    pubsub = client.pubsub()
+    channel = f"slide2anki:progress:{job_id}"
+    await pubsub.subscribe(channel)
+
+    try:
+        while True:
+            message = await pubsub.get_message(
+                ignore_subscribe_messages=True,
+                timeout=1.0,
+            )
+            if message and message.get("type") == "message":
+                data = message.get("data")
+                if isinstance(data, bytes):
+                    data = data.decode("utf-8")
+                if isinstance(data, str):
+                    try:
+                        yield json.loads(data)
+                    except json.JSONDecodeError:
+                        continue
+            await asyncio.sleep(poll_interval)
+    finally:
+        await pubsub.unsubscribe(channel)
+        await pubsub.close()

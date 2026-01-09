@@ -1,64 +1,98 @@
+/**
+ * Deck list page with export actions.
+ */
 'use client';
 
-import { useState } from 'react';
-import { FolderOpen, FileText, MoreVertical, Download, Trash2 } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
+import { FolderOpen, FileText, MoreVertical, Download } from 'lucide-react';
 
-interface Deck {
-  id: string;
-  name: string;
-  card_count: number;
-  pending_review: number;
-  status: 'processing' | 'ready' | 'exported';
-  created_at: string;
-}
+import { api, Deck } from '@/lib/api';
 
-// Mock data for demo
-const mockDecks: Deck[] = [
-  {
-    id: 'd1',
-    name: 'Biology 101 - Cell Structure',
-    card_count: 45,
-    pending_review: 12,
-    status: 'ready',
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: 'd2',
-    name: 'History - World War II',
-    card_count: 78,
-    pending_review: 0,
-    status: 'exported',
-    created_at: new Date(Date.now() - 86400000).toISOString(),
-  },
-  {
-    id: 'd3',
-    name: 'Chemistry - Organic Compounds',
-    card_count: 0,
-    pending_review: 0,
-    status: 'processing',
-    created_at: new Date(Date.now() - 3600000).toISOString(),
-  },
-];
+type DeckStatus = 'processing' | 'ready' | 'exported' | 'created';
 
+/**
+ * Render the decks page with export actions.
+ */
 export default function DecksPage() {
-  const [decks] = useState<Deck[]>(mockDecks);
+  const [decks, setDecks] = useState<Deck[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [exportingDeckId, setExportingDeckId] = useState<string | null>(null);
 
-  const getStatusBadge = (status: Deck['status']) => {
-    const styles = {
+  /**
+   * Load decks from the API.
+   */
+  const loadDecks = useCallback(async () => {
+    setIsLoading(true);
+    setErrorMessage(null);
+    try {
+      const deckList = await api.listDecks();
+      setDecks(deckList);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Failed to load decks';
+      setErrorMessage(message);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadDecks();
+  }, [loadDecks]);
+
+  /**
+   * Trigger an export for a deck and open the download URL.
+   */
+  const handleExport = useCallback(async (deckId: string) => {
+    setExportingDeckId(deckId);
+    setErrorMessage(null);
+    try {
+      const exportJob = await api.exportDeck(deckId, 'tsv');
+      const downloadUrl = await api.getExportDownloadUrl(
+        exportJob.export_id
+      );
+      window.open(downloadUrl, '_blank', 'noopener,noreferrer');
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Export failed';
+      setErrorMessage(message);
+    } finally {
+      setExportingDeckId(null);
+    }
+  }, []);
+
+  /**
+   * Render a status badge for a deck.
+   */
+  const getStatusBadge = (status: DeckStatus) => {
+    const styles: Record<DeckStatus, string> = {
       processing: 'bg-yellow-100 text-yellow-700',
       ready: 'bg-green-100 text-green-700',
       exported: 'bg-gray-100 text-gray-700',
+      created: 'bg-gray-100 text-gray-700',
     };
-    const labels = {
+    const labels: Record<DeckStatus, string> = {
       processing: 'Processing',
       ready: 'Ready for Review',
       exported: 'Exported',
+      created: 'Ready for Review',
     };
     return (
       <span className={`px-2 py-1 text-xs font-medium rounded-full ${styles[status]}`}>
         {labels[status]}
       </span>
     );
+  };
+
+  /**
+   * Normalize deck status for display.
+   */
+  const normalizeStatus = (status: Deck['status']): DeckStatus => {
+    if (status === 'processing' || status === 'ready' || status === 'exported') {
+      return status;
+    }
+    return 'created';
   };
 
   return (
@@ -73,7 +107,15 @@ export default function DecksPage() {
         </a>
       </div>
 
-      {decks.length === 0 ? (
+      {errorMessage ? (
+        <div className="bg-white rounded-lg border p-12 text-center text-red-600">
+          {errorMessage}
+        </div>
+      ) : isLoading ? (
+        <div className="bg-white rounded-lg border p-12 text-center text-gray-500">
+          Loading decks...
+        </div>
+      ) : decks.length === 0 ? (
         <div className="bg-white rounded-lg border p-12 text-center">
           <FolderOpen className="w-12 h-12 text-gray-300 mx-auto mb-4" />
           <h3 className="text-lg font-medium text-gray-900 mb-2">No decks yet</h3>
@@ -108,11 +150,11 @@ export default function DecksPage() {
                 </div>
 
                 <div className="flex items-center gap-2 mb-3">
-                  {getStatusBadge(deck.status)}
+                  {getStatusBadge(normalizeStatus(deck.status))}
                 </div>
 
                 <div className="text-sm text-gray-600 space-y-1">
-                  <div>{deck.card_count} cards</div>
+                  <div>{deck.card_count || 0} cards</div>
                   {deck.pending_review > 0 && (
                     <div className="text-yellow-600">
                       {deck.pending_review} pending review
@@ -124,16 +166,20 @@ export default function DecksPage() {
               <div className="px-4 py-3 border-t bg-gray-50 flex gap-2">
                 {deck.status === 'ready' && (
                   <a
-                    href={`/review/${deck.id}`}
+                    href={`/review?deckId=${deck.id}`}
                     className="flex-1 px-3 py-1.5 text-sm text-center bg-primary-600 text-white rounded hover:bg-primary-700"
                   >
                     Review
                   </a>
                 )}
                 {deck.status !== 'processing' && (
-                  <button className="px-3 py-1.5 text-sm border rounded hover:bg-gray-100 flex items-center gap-1">
+                  <button
+                    onClick={() => handleExport(deck.id)}
+                    disabled={exportingDeckId === deck.id}
+                    className="px-3 py-1.5 text-sm border rounded hover:bg-gray-100 flex items-center gap-1 disabled:opacity-50"
+                  >
                     <Download className="w-4 h-4" />
-                    Export
+                    {exportingDeckId === deck.id ? 'Exporting...' : 'Export'}
                   </button>
                 )}
               </div>

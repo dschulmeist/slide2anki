@@ -1,29 +1,26 @@
 # slide2anki
 
-A fully local tool that converts image-based lecture PDFs into high-quality Anki flashcards using an agent-driven pipeline.
+slide2anki is a local-first tool that converts image-based lecture PDFs into high-quality Anki flashcards using a LangGraph-driven agent pipeline. Every card is tied to visual evidence on the source slide so users can verify where each fact came from.
 
-## Overview
+## What this project is trying to do
 
-slide2anki treats every slide as a visual source of knowledge rather than assuming machine-readable text. The system:
+- Treat slides as visual sources of knowledge, not plain text documents.
+- Extract atomic claims (definitions, facts, processes, relationships) using vision models.
+- Turn claims into focused, one-fact-per-card drafts with minimal wording.
+- Critique and deduplicate cards before exporting.
+- Keep the user in the loop with a review UI that shows evidence regions.
+- Run locally without accounts, relying on the user’s own model endpoint and API key.
 
-1. **Ingests** a PDF and renders each page as an image
-2. **Extracts** atomic claims (definitions, facts, processes, relationships) using vision models
-3. **Writes** focused Anki card drafts following best practices (one fact per card, minimal wording)
-4. **Critiques** each card for ambiguity, redundancy, and poor phrasing
-5. **Deduplicates** cards across the entire document
-6. **Exports** to Anki-compatible formats (TSV, .apkg)
+## How the pipeline works
 
-Every card is traceable back to its source slide and evidence region.
+1. Ingest a PDF and render each page to an image.
+2. Extract atomic claims from each slide image with a vision model.
+3. Write Anki card drafts that follow strict formatting rules.
+4. Critique cards for ambiguity, redundancy, and weak phrasing.
+5. Deduplicate overlapping cards across the deck.
+6. Export approved cards to TSV now and APKG later.
 
-## Features
-
-- **Fully Local**: All processing happens on your machine. Bring your own API key.
-- **Vision-First**: Works with image-based PDFs, scanned documents, and slides with diagrams
-- **Evidence-Based**: Every card links back to the exact slide region it came from
-- **Human-in-the-Loop**: Review UI lets you verify, edit, approve, or reject cards
-- **Extensible**: Pluggable model backends (OpenAI, Ollama, etc.)
-
-## Architecture
+## Architecture overview
 
 ```
 ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
@@ -44,23 +41,20 @@ Every card is traceable back to its source slide and evidence region.
                     └─────────────┘     └─────────────┘
 ```
 
-## Quick Start
+## Local prototype setup
 
 ### Prerequisites
 
 - Docker and Docker Compose
 - Node.js 20+
 - Python 3.11+
-- An API key for your preferred LLM provider (OpenAI, etc.)
+- A model endpoint and API key (OpenAI or Ollama)
 
-### One Command Setup
+### One command
 
 ```bash
-# Clone the repository
 git clone https://github.com/yourusername/slide2anki.git
 cd slide2anki
-
-# Start everything
 ./infra/scripts/dev.sh
 ```
 
@@ -69,7 +63,7 @@ This starts:
 - API at http://localhost:8000
 - Postgres, Redis, and MinIO
 
-### Manual Setup
+### Manual setup
 
 ```bash
 # Start infrastructure
@@ -91,7 +85,29 @@ uv pip install -e ".[dev]"
 python -m runner.worker
 ```
 
-## Project Structure
+## Configuration
+
+Create a `.env` file in the root directory:
+
+```env
+OPENAI_API_KEY=sk-...
+OLLAMA_BASE_URL=http://localhost:11434
+
+POSTGRES_URL=postgresql://slide2anki:slide2anki@localhost:5432/slide2anki
+REDIS_URL=redis://localhost:6379
+MINIO_ENDPOINT=localhost:9000
+MINIO_ACCESS_KEY=minioadmin
+MINIO_SECRET_KEY=minioadmin
+```
+
+## Using the prototype
+
+1. Upload a PDF on the home page.
+2. Track progress on the dashboard.
+3. Review cards side-by-side with slide evidence.
+4. Export approved cards to TSV.
+
+## Project structure
 
 ```
 slide2anki/
@@ -111,50 +127,19 @@ slide2anki/
     └── fixtures/     # Test fixtures
 ```
 
-## Configuration
-
-Create a `.env` file in the root directory:
-
-```env
-# LLM Configuration
-OPENAI_API_KEY=sk-...
-# Or for Ollama
-OLLAMA_BASE_URL=http://localhost:11434
-
-# Storage (defaults work for local dev)
-POSTGRES_URL=postgresql://slide2anki:slide2anki@localhost:5432/slide2anki
-REDIS_URL=redis://localhost:6379
-MINIO_ENDPOINT=localhost:9000
-MINIO_ACCESS_KEY=minioadmin
-MINIO_SECRET_KEY=minioadmin
-```
-
-## Usage
-
-1. **Upload**: Drop a PDF on the upload page
-2. **Process**: Watch the pipeline progress in real-time
-3. **Review**: Examine each card alongside its source slide
-4. **Export**: Download as TSV or .apkg file
-
 ## Development
 
-### Running Tests
+### Tests
 
 ```bash
-# All tests
 ./tools/lint.sh
 
-# Python tests
 cd packages/core && pytest
 cd apps/api && pytest
-
-# TypeScript tests
 cd apps/web && npm test
 ```
 
-### Regenerating API Client
-
-After modifying the API, regenerate the TypeScript client:
+### Regenerate the API client
 
 ```bash
 ./tools/generate_openapi_client.sh
@@ -162,14 +147,13 @@ After modifying the API, regenerate the TypeScript client:
 
 ## Roadmap
 
-- [x] Repository structure and dev environment
-- [ ] PDF upload and rendering
-- [ ] Basic card generation pipeline
-- [ ] Review UI with evidence highlighting
-- [ ] TSV export
-- [ ] .apkg export with embedded images
-- [ ] Ollama integration
-- [ ] Batch processing improvements
+- PDF upload and rendering
+- Basic card generation pipeline
+- Review UI with evidence highlighting
+- TSV export
+- APKG export with embedded images
+- Ollama integration
+- Batch processing improvements
 
 ## Contributing
 
@@ -178,11 +162,3 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 ## License
 
 Source Available - Personal use only. See [LICENSE](LICENSE) for details.
-
-## Acknowledgments
-
-Built with:
-- [LangGraph](https://github.com/langchain-ai/langgraph) for the agent pipeline
-- [Next.js](https://nextjs.org/) for the web interface
-- [FastAPI](https://fastapi.tiangolo.com/) for the backend API
-- [genanki](https://github.com/kerrickstaley/genanki) for Anki deck generation

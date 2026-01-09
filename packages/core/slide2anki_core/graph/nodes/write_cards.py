@@ -62,9 +62,7 @@ def create_write_cards_node(
             }
 
         # Format claims for prompt
-        claims_text = "\n".join(
-            f"- [{c.kind.value}] {c.statement}" for c in claims
-        )
+        claims_text = "\n".join(f"- [{c.kind.value}] {c.statement}" for c in claims)
         prompt = WRITE_CARDS_PROMPT.format(claims=claims_text)
 
         try:
@@ -82,8 +80,9 @@ def create_write_cards_node(
                 # Try to find matching claim for evidence
                 evidence = []
                 for claim in claims:
-                    if claim.statement in card_data.get("front", "") or \
-                       claim.statement in card_data.get("back", ""):
+                    if claim.statement in card_data.get(
+                        "front", ""
+                    ) or claim.statement in card_data.get("back", ""):
                         evidence.append(claim.evidence)
                         break
 
