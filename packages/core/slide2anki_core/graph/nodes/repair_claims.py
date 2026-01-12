@@ -3,11 +3,14 @@
 from collections.abc import Callable
 from typing import Any
 
-from slide2anki_core.evidence.crop import crop_evidence
+from slide2anki_core.evidence.crop import CropError, crop_evidence
 from slide2anki_core.model_adapters.base import BaseModelAdapter
 from slide2anki_core.schemas.claims import Claim, Evidence
 from slide2anki_core.schemas.document import Slide
 from slide2anki_core.schemas.regions import SlideRegion
+from slide2anki_core.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 REPAIR_PROMPT = """Rewrite the following claims so they are strictly supported by the slide region.
 
@@ -71,12 +74,18 @@ def create_repair_claims_node(
                 "attempt": state.get("attempt", 0),
             }
 
+        logger.info(f"Repairing {len(failed_claims)} claims")
+
+        # Try to crop the region, fall back to full slide if cropping fails
         image_data = slide.image_data if slide else None
         if slide and region:
             evidence = Evidence(slide_index=slide.page_index, bbox=region.bbox)
-            region_image = crop_evidence(slide.image_data, evidence, padding=0)
-            if region_image:
-                image_data = region_image
+            try:
+                region_image = crop_evidence(slide.image_data, evidence, padding=0)
+                if region_image:
+                    image_data = region_image
+            except CropError as e:
+                logger.warning(f"Failed to crop region, using full slide: {e}")
 
         prompt = REPAIR_PROMPT.format(claims=_format_claims(claims, failed_claims))
         data = await adapter.generate_structured(prompt=prompt, image_data=image_data)
@@ -96,13 +105,16 @@ def create_repair_claims_node(
                 repaired = statement.strip()
                 repair_map[index] = repaired
 
+        repaired_count = 0
         for index in failed_claims:
             new_statement = repair_map.get(index, "").strip()
             if new_statement:
                 claims[index].statement = new_statement
                 claims[index].confidence = min(max(claims[index].confidence, 0.5), 0.7)
+                repaired_count += 1
 
         attempt = state.get("attempt", 0) + 1
+        logger.info(f"Repaired {repaired_count} claims (attempt {attempt})")
 
         return {
             **state,

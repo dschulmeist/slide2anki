@@ -3,11 +3,14 @@
 from collections.abc import Callable
 from typing import Any
 
-from slide2anki_core.evidence.crop import crop_evidence
+from slide2anki_core.evidence.crop import CropError, crop_evidence
 from slide2anki_core.model_adapters.base import BaseModelAdapter
 from slide2anki_core.schemas.claims import Claim, Evidence
 from slide2anki_core.schemas.document import Slide
 from slide2anki_core.schemas.regions import SlideRegion
+from slide2anki_core.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 VERIFY_PROMPT = """Verify each claim against the provided slide region.
 
@@ -78,9 +81,13 @@ def create_verify_claims_node(
         image_data = slide.image_data if slide else None
         if slide and region:
             evidence = Evidence(slide_index=slide.page_index, bbox=region.bbox)
-            region_image = crop_evidence(slide.image_data, evidence, padding=0)
-            if region_image:
-                image_data = region_image
+            try:
+                region_image = crop_evidence(slide.image_data, evidence, padding=0)
+                if region_image:
+                    image_data = region_image
+            except CropError as e:
+                # Fall back to full slide image if cropping fails
+                logger.warning(f"Failed to crop region, using full slide: {e}")
 
         prompt = VERIFY_PROMPT.format(claims=_format_claims(claims))
         data = await adapter.generate_structured(prompt=prompt, image_data=image_data)
@@ -108,6 +115,7 @@ def create_verify_claims_node(
                 claims[index].confidence = max(claims[index].confidence, 0.6)
 
         needs_repair = bool(failed_claims)
+        logger.info(f"Verified {len(claims)} claims, {len(failed_claims)} need repair")
 
         return {
             **state,

@@ -3,11 +3,14 @@
 from collections.abc import Callable
 from typing import Any
 
-from slide2anki_core.evidence.crop import crop_evidence
+from slide2anki_core.evidence.crop import CropError, crop_evidence
 from slide2anki_core.model_adapters.base import BaseModelAdapter
 from slide2anki_core.schemas.claims import BoundingBox, Claim, ClaimKind, Evidence
 from slide2anki_core.schemas.document import Slide
 from slide2anki_core.schemas.regions import SlideRegion
+from slide2anki_core.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 EXTRACT_REGION_PROMPT = """Analyze this slide region and extract atomic claims.
 
@@ -85,9 +88,17 @@ def create_extract_region_node(
                 "current_step": "extract_region",
             }
 
+        # Try to crop the region, fall back to full slide if cropping fails
+        image_data = slide.image_data
         evidence = Evidence(slide_index=slide.page_index, bbox=region.bbox)
-        region_image = crop_evidence(slide.image_data, evidence, padding=0)
-        image_data = region_image or slide.image_data
+        try:
+            region_image = crop_evidence(slide.image_data, evidence, padding=0)
+            if region_image:
+                image_data = region_image
+        except CropError as e:
+            logger.warning(f"Failed to crop region, using full slide: {e}")
+
+        logger.info(f"Extracting claims from region ({region.kind.value})")
 
         response = await adapter.extract_claims(
             image_data=image_data,
@@ -122,6 +133,8 @@ def create_extract_region_node(
             )
             if claim.statement:
                 claims.append(claim)
+
+        logger.info(f"Extracted {len(claims)} claims from region")
 
         return {
             **state,

@@ -1368,6 +1368,7 @@ dependencies = [
     { name = "pdf2image" },
     { name = "pillow" },
     { name = "pydantic" },
+    { name = "tenacity" },
 ]
 
 [package.optional-dependencies]
@@ -1400,6 +1401,7 @@ requires-dist = [
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.23.6" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5.0.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.4.4" },
+    { name = "tenacity", specifier = ">=8.2.0" },
 ]
 provides-extras = ["dev", "ollama"]
 
