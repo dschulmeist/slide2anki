@@ -9,9 +9,38 @@ from slide2anki_core.model_adapters.base import BaseModelAdapter
 from slide2anki_core.schemas.cards import CardDraft
 from slide2anki_core.schemas.claims import Claim
 from slide2anki_core.utils.logging import get_logger
-from slide2anki_core.utils.retry import with_retry
+from slide2anki_core.utils.retry import RateLimitError, with_retry
 
 logger = get_logger(__name__)
+
+
+def _wrap_google_error(e: Exception) -> Exception:
+    """Convert Google API errors to standard exceptions for retry handling.
+
+    Args:
+        e: Original exception from Google API
+
+    Returns:
+        Wrapped exception (RateLimitError for rate limits, original otherwise)
+    """
+    error_str = str(e).lower()
+    error_type = type(e).__name__
+
+    # Check for rate limit / quota errors
+    if any(
+        indicator in error_str
+        for indicator in ["resource exhausted", "quota", "rate limit", "429", "too many requests"]
+    ) or error_type in ("ResourceExhausted", "TooManyRequests"):
+        return RateLimitError(f"Google API rate limit: {e}")
+
+    # Check for retryable server errors
+    if any(
+        indicator in error_str
+        for indicator in ["503", "500", "internal", "unavailable", "deadline"]
+    ) or error_type in ("ServiceUnavailable", "InternalServerError", "DeadlineExceeded"):
+        return ConnectionError(f"Google API server error: {e}")
+
+    return e
 
 # Default timeout for API calls (seconds)
 DEFAULT_TIMEOUT = 120.0
@@ -111,41 +140,45 @@ class GoogleAdapter(BaseModelAdapter):
 
         async def _make_request() -> str:
             """Make a single request to the Gemini API."""
-            model_instance = self.client.GenerativeModel(
-                model_name=model,
-                system_instruction=system_instruction,
-                generation_config={
-                    "response_mime_type": "application/json",
-                },
-            )
-            response = await asyncio.wait_for(
-                asyncio.to_thread(
-                    model_instance.generate_content,
-                    contents,
-                ),
-                timeout=self.timeout,
-            )
-            # Safely extract text from response - handle empty/blocked responses
-            if not response.candidates:
-                logger.warning(f"{operation_name}: No candidates in response")
-                return ""
-            candidate = response.candidates[0]
-            # Check finish_reason: 1=STOP (normal), 2=MAX_TOKENS, 3=SAFETY, 4=RECITATION, 5=OTHER
-            finish_reason = getattr(candidate, "finish_reason", None)
-            if finish_reason and finish_reason != 1:
-                logger.warning(
-                    f"{operation_name}: Response finished with reason {finish_reason}"
+            try:
+                model_instance = self.client.GenerativeModel(
+                    model_name=model,
+                    system_instruction=system_instruction,
+                    generation_config={
+                        "response_mime_type": "application/json",
+                    },
                 )
-            if not candidate.content or not candidate.content.parts:
-                logger.warning(
-                    f"{operation_name}: No content parts in response (finish_reason={finish_reason})"
+                response = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        model_instance.generate_content,
+                        contents,
+                    ),
+                    timeout=self.timeout,
                 )
-                return ""
-            # Extract text from parts
-            text_parts = [
-                part.text for part in candidate.content.parts if hasattr(part, "text")
-            ]
-            return "".join(text_parts)
+                # Safely extract text from response - handle empty/blocked responses
+                if not response.candidates:
+                    logger.warning(f"{operation_name}: No candidates in response")
+                    return ""
+                candidate = response.candidates[0]
+                # Check finish_reason: 1=STOP (normal), 2=MAX_TOKENS, 3=SAFETY, 4=RECITATION, 5=OTHER
+                finish_reason = getattr(candidate, "finish_reason", None)
+                if finish_reason and finish_reason != 1:
+                    logger.warning(
+                        f"{operation_name}: Response finished with reason {finish_reason}"
+                    )
+                if not candidate.content or not candidate.content.parts:
+                    logger.warning(
+                        f"{operation_name}: No content parts in response (finish_reason={finish_reason})"
+                    )
+                    return ""
+                # Extract text from parts
+                text_parts = [
+                    part.text for part in candidate.content.parts if hasattr(part, "text")
+                ]
+                return "".join(text_parts)
+            except Exception as e:
+                # Wrap Google-specific errors for proper retry handling
+                raise _wrap_google_error(e) from e
 
         logger.debug(f"Starting {operation_name} with model {model}")
         result = await with_retry(

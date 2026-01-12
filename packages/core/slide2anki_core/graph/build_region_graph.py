@@ -9,6 +9,9 @@ from slide2anki_core.model_adapters.base import BaseModelAdapter
 from slide2anki_core.schemas.claims import Claim
 from slide2anki_core.schemas.document import Slide
 from slide2anki_core.schemas.regions import SlideRegion
+from slide2anki_core.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class RegionPipelineState(TypedDict, total=False):
@@ -22,8 +25,21 @@ class RegionPipelineState(TypedDict, total=False):
     needs_repair: bool
     failed_claims: list[int]
     repair_suggestions: dict[int, str]
+    skip_verification: bool  # Skip verify/repair for text-only slides
     current_step: str
     errors: list[str]
+
+
+def _should_verify(state: RegionPipelineState) -> str:
+    """Route to verify or skip directly to end for text-only slides."""
+    # Skip verification for text-only slides - text extraction is reliable
+    slide = state.get("slide")
+    if slide and getattr(slide, "is_text_only", False):
+        logger.info(f"Skipping verification for text-only slide {slide.page_index}")
+        return END
+    if state.get("skip_verification"):
+        return END
+    return "verify_claims"
 
 
 def _should_repair(state: RegionPipelineState) -> str:
@@ -52,7 +68,8 @@ def build_region_graph(adapter: BaseModelAdapter) -> StateGraph:
     graph.add_node("repair_claims", repair_claims.create_repair_claims_node(adapter))
 
     graph.set_entry_point("extract_region")
-    graph.add_edge("extract_region", "verify_claims")
+    # Route to verify or skip based on slide type
+    graph.add_conditional_edges("extract_region", _should_verify)
     graph.add_conditional_edges("verify_claims", _should_repair)
     graph.add_edge("repair_claims", "verify_claims")
 
