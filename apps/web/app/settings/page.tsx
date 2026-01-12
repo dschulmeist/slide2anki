@@ -108,23 +108,44 @@ const AVAILABLE_MODELS: ModelOption[] = [
     provider: 'google',
     hasVision: true,
     tier: 'flagship',
-    description: 'Latest Gemini flagship with advanced reasoning',
-  },
-  {
-    id: 'gemini-3-pro-image-preview',
-    name: 'Gemini 3 Pro Image Preview',
-    provider: 'google',
-    hasVision: true,
-    tier: 'flagship',
-    description: 'Gemini 3 Pro tuned for image understanding',
+    description: 'Latest reasoning-first model for complex tasks',
+    contextTokens: 1048576,
   },
   {
     id: 'gemini-3-flash-preview',
     name: 'Gemini 3 Flash Preview',
     provider: 'google',
     hasVision: true,
+    tier: 'standard',
+    description: 'Fast multimodal model with strong reasoning',
+    contextTokens: 1048576,
+  },
+  {
+    id: 'gemini-2.5-pro',
+    name: 'Gemini 2.5 Pro',
+    provider: 'google',
+    hasVision: true,
+    tier: 'flagship',
+    description: 'Stable flagship with advanced reasoning',
+    contextTokens: 1048576,
+  },
+  {
+    id: 'gemini-2.5-flash',
+    name: 'Gemini 2.5 Flash',
+    provider: 'google',
+    hasVision: true,
+    tier: 'standard',
+    description: 'Stable fast model with large context',
+    contextTokens: 1048576,
+  },
+  {
+    id: 'gemini-2.0-flash',
+    name: 'Gemini 2.0 Flash',
+    provider: 'google',
+    hasVision: true,
     tier: 'efficient',
     description: 'Fast and efficient Gemini model',
+    contextTokens: 1048576,
   },
 
   // Mistral Models
@@ -969,9 +990,9 @@ export default function SettingsPage() {
         if (!key) {
           return { error: 'Provide a Google AI API key before pinging a model.' };
         }
-        // Use the generativelanguage generateText endpoint
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateText?key=${key}`;
-        const body = { prompt: { text: testPrompt } };
+        // Use the generativelanguage generateContent endpoint for Gemini models
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
+        const body = { contents: [{ parts: [{ text: testPrompt }] }] };
         return {
           url,
           options: {

@@ -15,6 +15,7 @@ from redis import Redis
 from sqlalchemy.orm import Session
 
 from runner.config import settings
+from slide2anki_core.model_adapters.google import GoogleAdapter
 from slide2anki_core.model_adapters.ollama import OllamaAdapter
 from slide2anki_core.model_adapters.openai import OpenAIAdapter
 
@@ -90,6 +91,17 @@ def build_model_adapter(db: Session, models: Any) -> Any:
             base_url=resolved_base_url,
             vision_model=model or "gpt-4o",
             text_model=model or "gpt-4o",
+        )
+
+    if provider == "google":
+        resolved_key = api_key or (settings.google_api_key or "").strip() or None
+        if not resolved_key:
+            raise ValueError("Missing API key for provider: google")
+
+        return GoogleAdapter(
+            api_key=resolved_key,
+            vision_model=model or "gemini-2.5-flash",
+            text_model=model or "gemini-2.5-flash",
         )
 
     if provider == "ollama":

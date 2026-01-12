@@ -5,12 +5,22 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { CheckCircle, FileText, Layers, UploadCloud } from 'lucide-react';
+import {
+  AlertCircle,
+  CheckCircle,
+  Clock,
+  FileText,
+  Layers,
+  Loader2,
+  UploadCloud,
+  XCircle,
+} from 'lucide-react';
 
 import {
   api,
   Chapter,
   Document,
+  Job,
   MarkdownBlock,
   MarkdownVersion,
   Project,
@@ -28,6 +38,73 @@ const focusOptions: FocusOption[] = [
   { key: 'relationships', label: 'Relationships' },
   { key: 'formulas', label: 'Formulas' },
 ];
+
+/**
+ * Map job status to display properties (icon, color, label).
+ */
+function getJobStatusDisplay(status: Job['status']) {
+  switch (status) {
+    case 'pending':
+      return {
+        icon: Clock,
+        colorClass: 'text-gray-500',
+        bgClass: 'bg-gray-100',
+        label: 'Pending',
+      };
+    case 'running':
+      return {
+        icon: Loader2,
+        colorClass: 'text-blue-600',
+        bgClass: 'bg-blue-50',
+        label: 'Running',
+        animate: true,
+      };
+    case 'completed':
+      return {
+        icon: CheckCircle,
+        colorClass: 'text-green-600',
+        bgClass: 'bg-green-50',
+        label: 'Completed',
+      };
+    case 'failed':
+      return {
+        icon: XCircle,
+        colorClass: 'text-red-600',
+        bgClass: 'bg-red-50',
+        label: 'Failed',
+      };
+    case 'cancelled':
+      return {
+        icon: AlertCircle,
+        colorClass: 'text-yellow-600',
+        bgClass: 'bg-yellow-50',
+        label: 'Cancelled',
+      };
+    default:
+      return {
+        icon: Clock,
+        colorClass: 'text-gray-500',
+        bgClass: 'bg-gray-100',
+        label: status,
+      };
+  }
+}
+
+/**
+ * Format job type for display.
+ */
+function formatJobType(jobType: string): string {
+  switch (jobType) {
+    case 'markdown_build':
+      return 'Building Markdown';
+    case 'deck_generation':
+      return 'Generating Cards';
+    case 'export':
+      return 'Exporting Deck';
+    default:
+      return jobType;
+  }
+}
 
 /**
  * Render project details including markdown and generation controls.
@@ -48,6 +125,7 @@ export default function ProjectDetailPage() {
   const [focus, setFocus] = useState<Record<string, boolean>>({});
   const [editingBlockId, setEditingBlockId] = useState<string | null>(null);
   const [editedContent, setEditedContent] = useState('');
+  const [jobs, setJobs] = useState<Job[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -76,19 +154,21 @@ export default function ProjectDetailPage() {
     setIsLoading(true);
     setErrorMessage(null);
     try {
-      const [projectData, docs, chapterList, blockList, markdownVersion] =
+      const [projectData, docs, chapterList, blockList, markdownVersion, jobList] =
         await Promise.all([
           api.getProject(projectId),
           api.listDocuments(projectId),
           api.listChapters(projectId),
           api.listMarkdownBlocks(projectId),
           api.getMarkdown(projectId),
+          api.listJobs(projectId),
         ]);
       setProject(projectData);
       setDocuments(docs);
       setChapters(chapterList);
       setBlocks(blockList);
       setMarkdown(markdownVersion);
+      setJobs(jobList);
       setSelectedChapters(chapterList.map((chapter) => chapter.id));
     } catch (error) {
       const message =
@@ -102,6 +182,55 @@ export default function ProjectDetailPage() {
   useEffect(() => {
     loadProject();
   }, [loadProject]);
+
+  /**
+   * Identify jobs that are still in progress (pending or running).
+   */
+  const activeJobs = useMemo(
+    () => jobs.filter((job) => job.status === 'pending' || job.status === 'running'),
+    [jobs]
+  );
+
+  /**
+   * Poll for job updates when there are active jobs.
+   * Also refresh project data when a job completes to pick up new chapters/blocks.
+   */
+  useEffect(() => {
+    if (activeJobs.length === 0 || !projectId) {
+      return undefined;
+    }
+
+    const interval = setInterval(async () => {
+      try {
+        const updatedJobs = await api.listJobs(projectId);
+        const previousActiveIds = new Set(activeJobs.map((j) => j.id));
+        const newlyCompleted = updatedJobs.filter(
+          (j) =>
+            previousActiveIds.has(j.id) &&
+            (j.status === 'completed' || j.status === 'failed' || j.status === 'cancelled')
+        );
+
+        setJobs(updatedJobs);
+
+        // Refresh project data if any job just completed (new chapters/blocks may exist)
+        if (newlyCompleted.length > 0) {
+          const [chapterList, blockList, markdownVersion] = await Promise.all([
+            api.listChapters(projectId),
+            api.listMarkdownBlocks(projectId),
+            api.getMarkdown(projectId),
+          ]);
+          setChapters(chapterList);
+          setBlocks(blockList);
+          setMarkdown(markdownVersion);
+          setSelectedChapters(chapterList.map((chapter) => chapter.id));
+        }
+      } catch {
+        // Silently ignore polling errors to avoid UI disruption
+      }
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [activeJobs, projectId]);
 
   /**
    * Group blocks by chapter for display.
@@ -254,6 +383,102 @@ export default function ProjectDetailPage() {
           />
         </label>
       </div>
+
+      {/* Active Jobs Section - shows when there are running or pending jobs */}
+      {activeJobs.length > 0 && (
+        <section className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <Loader2 className="w-5 h-5 text-blue-600 animate-spin" />
+            <h2 className="text-sm font-semibold text-blue-900">
+              Processing in Background
+            </h2>
+          </div>
+          <div className="space-y-2">
+            {activeJobs.map((job) => {
+              const statusDisplay = getJobStatusDisplay(job.status);
+              const StatusIcon = statusDisplay.icon;
+              return (
+                <div
+                  key={job.id}
+                  className="bg-white rounded-lg p-3 border border-blue-100"
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <StatusIcon
+                        className={`w-4 h-4 ${statusDisplay.colorClass} ${
+                          'animate' in statusDisplay && statusDisplay.animate
+                            ? 'animate-spin'
+                            : ''
+                        }`}
+                      />
+                      <span className="text-sm font-medium text-gray-900">
+                        {formatJobType(job.job_type)}
+                      </span>
+                    </div>
+                    <span
+                      className={`text-xs px-2 py-0.5 rounded-full ${statusDisplay.bgClass} ${statusDisplay.colorClass}`}
+                    >
+                      {statusDisplay.label}
+                    </span>
+                  </div>
+                  {job.current_step && (
+                    <p className="text-xs text-gray-600 mb-2">{job.current_step}</p>
+                  )}
+                  <div className="w-full bg-gray-200 rounded-full h-2">
+                    <div
+                      className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                      style={{ width: `${job.progress}%` }}
+                    />
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1 text-right">
+                    {job.progress}%
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {/* Recent Job Results - shows completed/failed jobs from this session */}
+      {jobs.filter(
+        (job) =>
+          (job.status === 'completed' || job.status === 'failed') &&
+          new Date(job.created_at).getTime() > Date.now() - 1000 * 60 * 30
+      ).length > 0 && (
+        <section className="bg-white border rounded-lg p-4 space-y-3">
+          <h2 className="text-sm font-semibold text-gray-700">Recent Jobs</h2>
+          <div className="space-y-2">
+            {jobs
+              .filter(
+                (job) =>
+                  (job.status === 'completed' || job.status === 'failed') &&
+                  new Date(job.created_at).getTime() > Date.now() - 1000 * 60 * 30
+              )
+              .slice(0, 5)
+              .map((job) => {
+                const statusDisplay = getJobStatusDisplay(job.status);
+                const StatusIcon = statusDisplay.icon;
+                return (
+                  <div
+                    key={job.id}
+                    className={`flex items-center justify-between p-2 rounded-lg ${statusDisplay.bgClass}`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <StatusIcon className={`w-4 h-4 ${statusDisplay.colorClass}`} />
+                      <span className="text-sm text-gray-700">
+                        {formatJobType(job.job_type)}
+                      </span>
+                    </div>
+                    <span className={`text-xs ${statusDisplay.colorClass}`}>
+                      {statusDisplay.label}
+                    </span>
+                  </div>
+                );
+              })}
+          </div>
+        </section>
+      )}
 
       <section className="bg-white border rounded-lg p-6 space-y-4">
         <div className="flex items-center gap-2">

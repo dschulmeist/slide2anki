@@ -20,7 +20,8 @@ slide2anki is a local-first tool that converts image-based lecture PDFs into hig
 LATER WORK:
 - deploy on the web with user accounts etc.
 - implement own flashcard study system similar to anki to study and review teh flashcards. Also include some AI based features in there.
-
+- implement some sort of web grounding/augmentation to improve the quality of the flashcards
+       
 ## How the pipeline works
 
 1. Ingest a PDF and render each page to an image.
@@ -28,7 +29,7 @@ LATER WORK:
 3. Write Anki card drafts that follow strict formatting rules.
 4. Critique cards for ambiguity, redundancy, and weak phrasing.
 5. Deduplicate overlapping cards across the deck.
-6. Export approved cards to TSV now and APKG later.
+6. Export approved cards to TSV or APKG format.
 
 ## Architecture overview
 
@@ -50,6 +51,75 @@ LATER WORK:
                     │   (files)   │     │  (LangGraph)│
                     └─────────────┘     └─────────────┘
 ```
+
+### Component responsibilities
+
+| Component | Technology | Responsibility |
+|-----------|------------|----------------|
+| **Web UI** | Next.js 14, React 18, Tailwind, Zustand | User interface for uploads, review, settings |
+| **API** | FastAPI, SQLAlchemy, asyncpg | REST endpoints, request validation, job dispatch |
+| **Queue** | Redis + RQ | Decouples long-running tasks from HTTP requests |
+| **Worker** | Python worker process | Executes pipeline jobs, updates progress |
+| **Postgres** | PostgreSQL 16 | Stores projects, documents, markdown, cards, jobs |
+| **MinIO** | S3-compatible storage | Stores PDFs, slide images, exports |
+| **Core** | LangGraph, LangChain, Pydantic | Framework-agnostic extraction and generation logic |
+
+### Data model
+
+```
+Project (workspace)
+  ├── Document (uploaded PDF)
+  │     └── Slide (rendered page image)
+  │           └── Claim (extracted atomic fact)
+  ├── Chapter (inferred section)
+  │     └── MarkdownBlock (canonical content unit)
+  ├── MarkdownVersion (full snapshot for rollback)
+  ├── Deck (flashcard collection)
+  │     └── CardDraft (generated card)
+  │           └── CardRevision (edit history)
+  ├── GenerationConfig (card generation settings)
+  └── Job (async task with JobEvent log)
+```
+
+### Pipeline graphs (LangGraph)
+
+The core package defines multiple composable graphs:
+
+| Graph | Purpose | Key Nodes |
+|-------|---------|-----------|
+| `build_markdown_graph` | Extract content from slides into canonical markdown | ingest, render, segment, extract, verify, markdown |
+| `build_card_graph` | Generate flashcards from markdown blocks | write_cards, critique, repair, dedupe |
+| `build_slide_graph` | Simple slide-level extraction | extract, write_cards, dedupe, export |
+| `build_region_graph` | Region-aware extraction for complex slides | segment, extract_region, verify, repair |
+
+### Request lifecycle
+
+1. User uploads PDF via Web UI
+2. API creates `Document` record, stores PDF in MinIO, enqueues `markdown_build` job
+3. Worker dequeues job, runs markdown graph, persists `MarkdownBlock` rows
+4. User reviews markdown, selects chapters, clicks "Generate Deck"
+5. API creates `Deck` record, enqueues `deck_generation` job
+6. Worker runs card graph, persists `CardDraft` rows
+7. User reviews cards, approves/rejects, requests export
+8. Worker generates TSV/APKG file, uploads to MinIO
+9. User downloads export
+
+### Model provider abstraction
+
+The core package uses a `BaseModelAdapter` interface for LLM calls:
+
+- **OpenAIAdapter**: OpenAI API, OpenRouter, and compatible endpoints
+- **OllamaAdapter**: Local Ollama instances
+
+Configuration is stored in `AppSetting` (Postgres) and loaded by workers at runtime.
+
+### Tech stack summary
+
+**Backend**: Python 3.11+, FastAPI, SQLAlchemy 2.0, Alembic, Redis, MinIO SDK, LangGraph, LangChain, Pydantic 2, pdf2image, Pillow, genanki
+
+**Frontend**: Node.js 20+, Next.js 14, React 18, TypeScript, Tailwind CSS, Zustand, SWR
+
+**Infrastructure**: Docker, Docker Compose, PostgreSQL 16, Redis 7, MinIO
 
 ## Local prototype setup
 
@@ -180,13 +250,21 @@ cd apps/web && npm test
 
 ## Roadmap
 
+Completed:
+
 - PDF upload and rendering
 - Basic card generation pipeline
 - Review UI with evidence highlighting
 - TSV export
 - APKG export with embedded images
-- Ollama integration
+- Model provider configuration (OpenRouter, Ollama)
+
+Planned:
+
 - Batch processing improvements
+- Asset masking for diagram-based cards
+- User authentication and multi-tenancy
+- Deployed web version with accounts
 
 ## Contributing
 

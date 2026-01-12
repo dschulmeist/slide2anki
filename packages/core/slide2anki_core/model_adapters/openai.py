@@ -16,6 +16,45 @@ logger = get_logger(__name__)
 # Default timeout for API calls (seconds)
 DEFAULT_TIMEOUT = 120.0
 
+# Models that require max_completion_tokens instead of max_tokens.
+# This includes o1 family and newer gpt-4o versions.
+MODELS_REQUIRING_COMPLETION_TOKENS = frozenset(
+    [
+        "o1",
+        "o1-mini",
+        "o1-preview",
+        "o1-2024-12-17",
+        "o3-mini",
+        "o3-mini-2025-01-31",
+    ]
+)
+
+
+def _uses_max_completion_tokens(model: str) -> bool:
+    """Check if a model requires max_completion_tokens instead of max_tokens.
+
+    Some newer OpenAI models (o1 family, o3-mini) use the newer parameter name.
+    This function checks both exact matches and prefix matches for versioned models.
+
+    Args:
+        model: The model identifier
+
+    Returns:
+        True if the model requires max_completion_tokens
+    """
+    model_lower = model.lower()
+
+    # Check exact matches
+    if model_lower in MODELS_REQUIRING_COMPLETION_TOKENS:
+        return True
+
+    # Check prefix matches for o1/o3 variants (e.g., "o1-preview-2024-09-12")
+    for prefix in ("o1-", "o1_", "o3-", "o3_"):
+        if model_lower.startswith(prefix):
+            return True
+
+    return False
+
 
 def _parse_json_response(content: str) -> dict[str, Any] | list[dict[str, Any]]:
     """Parse JSON content returned by the model.
@@ -111,7 +150,29 @@ class OpenAIAdapter(BaseModelAdapter):
             create_kwargs: dict[str, Any] = {
                 "model": model,
                 "messages": messages,
-                "max_tokens": 4096,
+            }
+
+            # Use appropriate token limit parameter based on model
+            if _uses_max_completion_tokens(model):
+                create_kwargs["max_completion_tokens"] = 4096
+            else:
+                create_kwargs["max_tokens"] = 4096
+
+            if use_response_format:
+                create_kwargs["response_format"] = {"type": "json_object"}
+
+            response = await asyncio.wait_for(
+                self.client.chat.completions.create(**create_kwargs),
+                timeout=self.timeout,
+            )
+            return response.choices[0].message.content or ""
+
+        async def _make_request_with_completion_tokens(use_response_format: bool) -> str:
+            """Fallback request using max_completion_tokens instead of max_tokens."""
+            create_kwargs: dict[str, Any] = {
+                "model": model,
+                "messages": messages,
+                "max_completion_tokens": 4096,
             }
             if use_response_format:
                 create_kwargs["response_format"] = {"type": "json_object"}
@@ -123,26 +184,61 @@ class OpenAIAdapter(BaseModelAdapter):
             return response.choices[0].message.content or ""
 
         logger.debug(f"Starting {operation_name} with model {model}")
+        use_response_format = True
         try:
             result = await with_retry(
-                lambda: _make_request(True),
+                lambda: _make_request(use_response_format),
                 max_attempts=self.max_retries,
                 operation_name=operation_name,
             )
         except Exception as exc:
             message = str(exc).lower()
-            if "response_format" not in message:
+
+            # Handle max_tokens not supported - retry with max_completion_tokens
+            if "max_tokens" in message and "unsupported" in message:
+                logger.warning(
+                    "max_tokens_rejected_retrying_with_max_completion_tokens",
+                    operation=operation_name,
+                    model=model,
+                )
+                result = await with_retry(
+                    lambda: _make_request_with_completion_tokens(use_response_format),
+                    max_attempts=self.max_retries,
+                    operation_name=f"{operation_name}_completion_tokens",
+                )
+            elif "response_format" in message:
+                # Handle response_format not supported
+                logger.warning(
+                    "response_format_rejected_retrying",
+                    operation=operation_name,
+                    model=model,
+                )
+                use_response_format = False
+                try:
+                    result = await with_retry(
+                        lambda: _make_request(use_response_format),
+                        max_attempts=self.max_retries,
+                        operation_name=f"{operation_name}_no_response_format",
+                    )
+                except Exception as inner_exc:
+                    inner_message = str(inner_exc).lower()
+                    if "max_tokens" in inner_message and "unsupported" in inner_message:
+                        logger.warning(
+                            "max_tokens_rejected_retrying_with_max_completion_tokens",
+                            operation=operation_name,
+                            model=model,
+                        )
+                        result = await with_retry(
+                            lambda: _make_request_with_completion_tokens(
+                                use_response_format
+                            ),
+                            max_attempts=self.max_retries,
+                            operation_name=f"{operation_name}_completion_tokens_no_fmt",
+                        )
+                    else:
+                        raise
+            else:
                 raise
-            logger.warning(
-                "response_format_rejected_retrying",
-                operation=operation_name,
-                model=model,
-            )
-            result = await with_retry(
-                lambda: _make_request(False),
-                max_attempts=self.max_retries,
-                operation_name=f"{operation_name}_no_response_format",
-            )
         logger.debug(f"Completed {operation_name}")
         return result
 
