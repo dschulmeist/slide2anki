@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from runner.config import settings
 from runner.tasks.helpers import (
+    build_model_adapter,
     download_bytes,
     ensure_bucket,
     get_minio_client,
@@ -22,19 +23,11 @@ from runner.tasks.helpers import (
     upload_bytes,
 )
 from slide2anki_core.graph import build_markdown_graph
-from slide2anki_core.model_adapters.ollama import OllamaAdapter
-from slide2anki_core.model_adapters.openai import OpenAIAdapter
 from slide2anki_core.schemas.claims import Claim
 from slide2anki_core.schemas.markdown import MarkdownBlock
 
 logger = structlog.get_logger()
 
-
-def _build_adapter() -> Any:
-    """Select the model adapter based on available settings."""
-    if settings.openai_api_key:
-        return OpenAIAdapter(api_key=settings.openai_api_key)
-    return OllamaAdapter(base_url=settings.ollama_base_url)
 
 
 def _normalize_title(filename: str) -> str:
@@ -209,7 +202,7 @@ def run_markdown_build(job_id: str) -> dict[str, Any]:
             pdf_data = download_bytes(minio_client, document.object_key)
 
             update_job_progress(db, job, 15, "Running markdown pipeline")
-            adapter = _build_adapter()
+            adapter = build_model_adapter(db, models)
             graph = build_markdown_graph(adapter)
             result = asyncio.run(
                 graph.ainvoke(
@@ -343,6 +336,7 @@ def run_markdown_build(job_id: str) -> dict[str, Any]:
                 "blocks": len(blocks),
             }
         except Exception as exc:
+            job.error_message = str(exc)
             update_job_progress(db, job, 100, "Failed", status="failed")
             logger.exception(
                 "markdown_build_failed",

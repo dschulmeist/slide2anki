@@ -17,6 +17,7 @@ from app.routers import (
     markdown,
     projects,
     review,
+    settings as settings_router,
 )
 from app.services.storage import init_storage
 from app.settings import settings
@@ -59,6 +60,7 @@ app.include_router(decks.router, prefix="/api/v1", tags=["decks"])
 app.include_router(jobs.router, prefix="/api/v1", tags=["jobs"])
 app.include_router(review.router, prefix="/api/v1", tags=["review"])
 app.include_router(exports.router, prefix="/api/v1", tags=["exports"])
+app.include_router(settings_router.router, prefix="/api/v1", tags=["settings"])
 
 
 if __name__ == "__main__":

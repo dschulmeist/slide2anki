@@ -3,6 +3,7 @@
 import json
 import signal
 import sys
+from datetime import datetime
 from typing import Any, NoReturn
 
 import structlog
@@ -59,6 +60,24 @@ def _dispatch_job(job_id: str) -> None:
             logger.warning("job_not_found", job_id=job_id)
             return
 
+        if job.status != "pending":
+            logger.info("job_skipped", job_id=job_id, status=job.status)
+            db.add(
+                models.JobEvent(
+                    job_id=job.id,
+                    level="info",
+                    message=f"Job skipped (status={job.status})",
+                    step=job.current_step,
+                    progress=job.progress,
+                    details_json={
+                        "skipped_at": datetime.utcnow().isoformat(),
+                        "status": job.status,
+                    },
+                )
+            )
+            db.commit()
+            return
+
         if job.job_type == "markdown_build":
             run_markdown_build(job_id)
             return
@@ -113,14 +132,18 @@ def main() -> None:
     redis_conn = create_redis_connection()
     logger.info("worker_ready")
 
-    try:
-        while True:
-            payload = dequeue_task(redis_conn)
-            if payload:
-                handle_task(payload)
-    except Exception as exc:
-        logger.exception("worker_error", error=str(exc))
-        sys.exit(1)
+    while True:
+        payload = dequeue_task(redis_conn)
+        if not payload:
+            continue
+
+        try:
+            logger.info("task_received", kind=payload.get("kind"))
+            handle_task(payload)
+        except Exception as exc:
+            # Never crash the entire worker on a single task failure.
+            # The task itself is responsible for transitioning DB state to failed.
+            logger.exception("task_failed", error=str(exc))
 
 
 if __name__ == "__main__":

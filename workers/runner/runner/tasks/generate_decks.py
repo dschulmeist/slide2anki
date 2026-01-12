@@ -11,21 +11,12 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from runner.config import settings
-from runner.tasks.helpers import get_models, update_job_progress
+from runner.tasks.helpers import build_model_adapter, get_models, update_job_progress
 from slide2anki_core.graph import build_card_graph
-from slide2anki_core.model_adapters.ollama import OllamaAdapter
-from slide2anki_core.model_adapters.openai import OpenAIAdapter
 from slide2anki_core.schemas.cards import CardDraft
 from slide2anki_core.schemas.claims import Claim, ClaimKind, Evidence
 
 logger = structlog.get_logger()
-
-
-def _build_adapter() -> Any:
-    """Select the model adapter based on available settings."""
-    if settings.openai_api_key:
-        return OpenAIAdapter(api_key=settings.openai_api_key)
-    return OllamaAdapter(base_url=settings.ollama_base_url)
 
 
 def _strip_formula(content: str) -> str:
@@ -130,7 +121,7 @@ def run_deck_generation(job_id: str) -> dict[str, Any]:
                 )
 
             claims, anchor_map = _build_claims(blocks)
-            adapter = _build_adapter()
+            adapter = build_model_adapter(db, models)
             graph = build_card_graph(adapter)
 
             update_job_progress(db, job, 30, "Generating cards")
@@ -201,6 +192,7 @@ def run_deck_generation(job_id: str) -> dict[str, Any]:
                 "cards": len(cards),
             }
         except Exception as exc:
+            job.error_message = str(exc)
             update_job_progress(db, job, 100, "Failed", status="failed")
             logger.exception(
                 "deck_generation_failed",

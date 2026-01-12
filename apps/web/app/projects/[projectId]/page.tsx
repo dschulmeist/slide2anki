@@ -52,6 +52,18 @@ export default function ProjectDetailPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   /**
+   * Automatically clear transient errors so users can continue without reloading.
+   */
+  useEffect(() => {
+    if (!errorMessage) {
+      return undefined;
+    }
+
+    const timer = setTimeout(() => setErrorMessage(null), 5000);
+    return () => clearTimeout(timer);
+  }, [errorMessage]);
+
+  /**
    * Load project data, documents, chapters, blocks, and markdown snapshot.
    */
   const loadProject = useCallback(async () => {

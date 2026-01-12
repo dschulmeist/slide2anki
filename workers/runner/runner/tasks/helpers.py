@@ -15,16 +15,21 @@ from redis import Redis
 from sqlalchemy.orm import Session
 
 from runner.config import settings
+from slide2anki_core.model_adapters.ollama import OllamaAdapter
+from slide2anki_core.model_adapters.openai import OpenAIAdapter
 
 QUEUE_PROGRESS_PREFIX = "slide2anki:progress"
 
 
 def ensure_api_on_path() -> None:
     """Ensure the API package is importable for ORM models."""
-    project_root = Path(__file__).resolve().parents[4]
-    api_path = project_root / "apps" / "api"
-    if api_path.exists() and str(api_path) not in sys.path:
-        sys.path.insert(0, str(api_path))
+    current = Path(__file__).resolve()
+    for parent in [current, *current.parents]:
+        api_path = parent / "apps" / "api"
+        if api_path.exists():
+            if str(api_path) not in sys.path:
+                sys.path.insert(0, str(api_path))
+            return
 
 
 def get_models() -> Any:
@@ -33,6 +38,71 @@ def get_models() -> Any:
     from app.db import models  # type: ignore
 
     return models
+
+
+def get_or_create_app_settings(db: Session, models: Any) -> Any:
+    """Return the singleton application settings row, creating it if missing."""
+    try:
+        existing = db.query(models.AppSetting).limit(1).one_or_none()
+        if existing:
+            return existing
+
+        settings_row = models.AppSetting()
+        db.add(settings_row)
+        db.commit()
+        db.refresh(settings_row)
+        return settings_row
+    except Exception:
+        # The worker can start before the API has initialized tables in dev.
+        # In that case, fall back to environment-based configuration.
+        return None
+
+
+def build_model_adapter(db: Session, models: Any) -> Any:
+    """Create the model adapter for the worker based on persisted app settings.
+
+    This keeps the worker aligned with the settings chosen in the web UI (saved via the API).
+    """
+    app_settings = get_or_create_app_settings(db, models)
+
+    provider = "ollama"
+    model = ""
+    base_url: str | None = None
+    api_key: str | None = None
+
+    if app_settings is not None:
+        provider = (app_settings.provider or provider).lower()
+        model = (app_settings.model or model).strip()
+        base_url = (app_settings.base_url or "").strip() or None
+        api_key = (app_settings.api_key or "").strip() or None
+
+    if provider in {"openai", "openrouter"}:
+        resolved_key = api_key or (settings.openai_api_key or "").strip() or None
+        if not resolved_key:
+            raise ValueError(f"Missing API key for provider: {provider}")
+
+        resolved_base_url = base_url
+        if provider == "openrouter" and not resolved_base_url:
+            resolved_base_url = "https://openrouter.ai/api/v1"
+
+        return OpenAIAdapter(
+            api_key=resolved_key,
+            base_url=resolved_base_url,
+            vision_model=model or "gpt-4o",
+            text_model=model or "gpt-4o",
+        )
+
+    if provider == "ollama":
+        resolved_base_url = base_url or settings.ollama_base_url
+        if not resolved_base_url:
+            raise ValueError("Missing Ollama base URL")
+        return OllamaAdapter(
+            base_url=resolved_base_url,
+            vision_model=model or "llava",
+            text_model=model or "llama3",
+        )
+
+    raise ValueError(f"Unsupported provider: {provider}")
 
 
 def get_minio_client() -> Minio:
@@ -88,19 +158,62 @@ def publish_progress(job_id: str, progress: int, step: str) -> None:
     client.publish(f"{QUEUE_PROGRESS_PREFIX}:{job_id}", payload)
 
 
+def record_job_event(
+    db: Session,
+    models: Any,
+    job: Any,
+    *,
+    level: str,
+    message: str,
+    step: Optional[str],
+    progress: Optional[int],
+    details: Optional[dict] = None,
+) -> None:
+    """Persist an append-only event entry for a job.
+
+    The UI depends on these events to show what is happening when a job is running,
+    and to explain why a job failed (without requiring the user to tail worker logs).
+    """
+    db.add(
+        models.JobEvent(
+            job_id=job.id,
+            level=level,
+            message=message,
+            step=step,
+            progress=progress,
+            details_json=details,
+        )
+    )
+
+
 def update_job_progress(
     db: Session,
     job: Any,
     progress: int,
     step: str,
     status: Optional[str] = None,
+    *,
+    event_message: Optional[str] = None,
+    event_level: str = "info",
+    event_details: Optional[dict] = None,
 ) -> None:
     """Persist job progress to the database and publish updates."""
+    models = get_models()
     job.progress = progress
     job.current_step = step
     if status:
         job.status = status
         if status in {"completed", "failed"}:
             job.finished_at = datetime.utcnow()
+    record_job_event(
+        db,
+        models,
+        job,
+        level=event_level,
+        message=event_message or step,
+        step=step,
+        progress=progress,
+        details=event_details,
+    )
     db.commit()
     publish_progress(str(job.id), progress, step)

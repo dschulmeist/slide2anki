@@ -3,6 +3,7 @@
  */
 'use client';
 
+import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Clock, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 
@@ -100,7 +101,7 @@ export default function DashboardPage() {
       streams.set(job.id, source);
     });
 
-    for (const [jobId, source] of streams) {
+    for (const [jobId, source] of Array.from(streams.entries())) {
       if (!activeJobIds.has(jobId)) {
         source.close();
         streams.delete(jobId);
@@ -108,7 +109,7 @@ export default function DashboardPage() {
     }
 
     return () => {
-      for (const source of streams.values()) {
+      for (const source of Array.from(streams.values())) {
         source.close();
       }
       streams.clear();
@@ -192,14 +193,28 @@ export default function DashboardPage() {
                     </span>
                     {getStatusBadge(job.status)}
                   </div>
-                  {job.job_type === 'deck_generation' && job.deck_id && (
-                    <a
-                      href={`/review?deckId=${job.deck_id}`}
-                      className="text-sm text-primary-600 hover:text-primary-700"
+                  <div className="flex items-center gap-4 text-sm">
+                    {job.job_type === 'deck_generation' && job.deck_id && (
+                      <Link
+                        href={`/review?deckId=${job.deck_id}`}
+                        className="text-primary-600 hover:text-primary-700"
+                      >
+                        Review Deck
+                      </Link>
+                    )}
+                    <Link
+                      href={`/projects/${job.project_id}`}
+                      className="text-primary-600 hover:text-primary-700"
                     >
-                      Review Deck
-                    </a>
-                  )}
+                      View Project
+                    </Link>
+                    <Link
+                      href={`/jobs/${job.id}`}
+                      className="text-primary-600 hover:text-primary-700"
+                    >
+                      View Job
+                    </Link>
+                  </div>
                 </div>
 
                 {job.status === 'running' && (

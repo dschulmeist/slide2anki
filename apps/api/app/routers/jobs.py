@@ -11,7 +11,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import models
 from app.db.session import get_db
-from app.schemas.api import JobCreate, JobListResponse, JobResponse
+from app.schemas.api import (
+    JobCreate,
+    JobEventListResponse,
+    JobEventResponse,
+    JobListResponse,
+    JobResponse,
+)
 from app.services.queue import enqueue_job, subscribe_progress
 
 router = APIRouter()
@@ -76,6 +82,17 @@ async def create_job(
     await db.commit()
     await db.refresh(job)
 
+    db.add(
+        models.JobEvent(
+            job_id=job.id,
+            level="info",
+            message="Job queued",
+            step=job.current_step,
+            progress=job.progress,
+        )
+    )
+    await db.commit()
+
     await enqueue_job(str(job.id))
 
     return JobResponse.model_validate(job)
@@ -107,6 +124,15 @@ async def cancel_job(
     if job.status not in ("pending", "running"):
         raise HTTPException(status_code=400, detail="Job cannot be cancelled")
     job.status = "cancelled"
+    db.add(
+        models.JobEvent(
+            job_id=job.id,
+            level="info",
+            message="Job cancelled",
+            step=job.current_step,
+            progress=job.progress,
+        )
+    )
     await db.commit()
 
 
@@ -130,4 +156,31 @@ async def stream_job_progress(
         event_generator(),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache"},
+    )
+
+
+@router.get("/jobs/{job_id}/events", response_model=JobEventListResponse)
+async def list_job_events(
+    job_id: UUID,
+    limit: int = 200,
+    db: AsyncSession = Depends(get_db),
+) -> JobEventListResponse:
+    """List the most recent events for a job."""
+    limit = max(1, min(limit, 500))
+    result = await db.execute(select(models.Job).where(models.Job.id == job_id))
+    job = result.scalar_one_or_none()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    events_result = await db.execute(
+        select(models.JobEvent)
+        .where(models.JobEvent.job_id == job_id)
+        .order_by(models.JobEvent.created_at.desc())
+        .limit(limit)
+    )
+    events = events_result.scalars().all()
+    # Reverse for chronological display.
+    events.reverse()
+    return JobEventListResponse(
+        events=[JobEventResponse.model_validate(event) for event in events]
     )

@@ -164,6 +164,7 @@ class JobResponse(BaseModel):
     status: str
     progress: int
     current_step: Optional[str] = None
+    error_message: Optional[str] = None
     created_at: datetime
     finished_at: Optional[datetime] = None
 
@@ -218,7 +219,53 @@ class CardRevisionResponse(BaseModel):
     back: str
     tags: list[str] = []
     edited_by: Optional[str] = None
+
+
+class JobEventResponse(BaseModel):
+    """Job event response payload."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    job_id: UUID
+    level: str
+    message: str
+    step: Optional[str] = None
+    progress: Optional[int] = None
+    details_json: Optional[dict] = None
     created_at: datetime
+
+
+class JobEventListResponse(BaseModel):
+    """List response for job events."""
+
+    events: list[JobEventResponse]
+
+
+class AppSettingsResponse(BaseModel):
+    """Response payload for application settings (masked)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    provider: str
+    model: str
+    base_url: Optional[str] = None
+    api_key_present: bool = False
+    updated_at: datetime
+
+
+class AppSettingsUpdate(BaseModel):
+    """Update payload for application settings.
+
+    Notes:
+        - api_key is write-only; the API never returns the raw secret.
+        - api_key may be omitted to keep the existing key.
+    """
+
+    provider: str
+    model: str
+    base_url: Optional[str] = None
+    api_key: Optional[str] = None
 
 
 class CardRevisionListResponse(BaseModel):

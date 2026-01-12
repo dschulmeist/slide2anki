@@ -101,24 +101,48 @@ class OpenAIAdapter(BaseModelAdapter):
             Response content string
         """
 
-        async def _make_request() -> str:
+        async def _make_request(use_response_format: bool) -> str:
+            """Make a single request, optionally using JSON response_format.
+
+            Some OpenAI-compatible providers (notably OpenRouter routes) do not support the
+            `response_format` parameter across all models. We prefer it for strict JSON,
+            but fall back gracefully when the provider rejects it.
+            """
+            create_kwargs: dict[str, Any] = {
+                "model": model,
+                "messages": messages,
+                "max_tokens": 4096,
+            }
+            if use_response_format:
+                create_kwargs["response_format"] = {"type": "json_object"}
+
             response = await asyncio.wait_for(
-                self.client.chat.completions.create(
-                    model=model,
-                    messages=messages,
-                    max_tokens=4096,
-                    response_format={"type": "json_object"},
-                ),
+                self.client.chat.completions.create(**create_kwargs),
                 timeout=self.timeout,
             )
             return response.choices[0].message.content or ""
 
         logger.debug(f"Starting {operation_name} with model {model}")
-        result = await with_retry(
-            _make_request,
-            max_attempts=self.max_retries,
-            operation_name=operation_name,
-        )
+        try:
+            result = await with_retry(
+                lambda: _make_request(True),
+                max_attempts=self.max_retries,
+                operation_name=operation_name,
+            )
+        except Exception as exc:
+            message = str(exc).lower()
+            if "response_format" not in message:
+                raise
+            logger.warning(
+                "response_format_rejected_retrying",
+                operation=operation_name,
+                model=model,
+            )
+            result = await with_retry(
+                lambda: _make_request(False),
+                max_attempts=self.max_retries,
+                operation_name=f"{operation_name}_no_response_format",
+            )
         logger.debug(f"Completed {operation_name}")
         return result
 

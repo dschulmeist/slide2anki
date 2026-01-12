@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, JSON, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, JSON, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -244,6 +244,7 @@ class Job(Base):
     status: Mapped[str] = mapped_column(String(50), default="pending")
     progress: Mapped[int] = mapped_column(Integer, default=0)
     current_step: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     logs_object_key: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
@@ -251,6 +252,57 @@ class Job(Base):
     project: Mapped["Project"] = relationship()
     document: Mapped[Optional["Document"]] = relationship(back_populates="jobs")
     deck: Mapped[Optional["Deck"]] = relationship(back_populates="jobs")
+    events: Mapped[list["JobEvent"]] = relationship(
+        back_populates="job", cascade="all, delete-orphan"
+    )
+
+
+class JobEvent(Base):
+    """Append-only event log for a job.
+
+    The worker writes job events as it transitions between steps and when failures occur.
+    The API surfaces these events to the UI so users can understand why a job is stuck or failed.
+    """
+
+    __tablename__ = "job_events"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    job_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("jobs.id"), nullable=False
+    )
+    level: Mapped[str] = mapped_column(String(25), default="info")
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    step: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    progress: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    details_json: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    job: Mapped["Job"] = relationship(back_populates="events")
+
+
+class AppSetting(Base):
+    """Singleton-style application settings persisted in the DB.
+
+    Settings live in Postgres so the worker can read them when running inside Docker.
+    The API only ever returns masked secrets to the UI.
+    """
+
+    __tablename__ = "app_settings"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    provider: Mapped[str] = mapped_column(String(50), default="ollama")
+    model: Mapped[str] = mapped_column(String(255), default="")
+    base_url: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    api_key: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    api_key_present: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
 
 
 class Claim(Base):

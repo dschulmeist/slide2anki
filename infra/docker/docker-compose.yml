@@ -102,15 +102,17 @@ services:
       dockerfile: infra/docker/worker.Dockerfile
     container_name: slide2anki-worker
     environment:
-      DATABASE_URL: postgresql+asyncpg://slide2anki:slide2anki@postgres:5432/slide2anki
+      DATABASE_URL: postgresql://slide2anki:slide2anki@postgres:5432/slide2anki
       REDIS_URL: redis://redis:6379
       MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: minioadmin
       MINIO_SECRET_KEY: minioadmin
       MINIO_BUCKET: slide2anki
       MINIO_SECURE: "false"
+      PYTHONPATH: /app/apps/api
     volumes:
-      - ../../workers/runner:/app
+      - ../../workers/runner/runner:/app/runner
+      - ../../apps/api:/app/apps/api
       - ../../packages/core:/packages/core
     depends_on:
       postgres:

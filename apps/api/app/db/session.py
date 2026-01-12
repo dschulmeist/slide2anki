@@ -27,3 +27,9 @@ async def init_db() -> None:
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # create_all does not add new columns to existing tables. For the prototype
+        # we apply a minimal, backwards-compatible schema patch to avoid crashes
+        # when running against an existing development DB volume.
+        await conn.exec_driver_sql(
+            "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS error_message TEXT"
+        )

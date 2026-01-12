@@ -82,6 +82,17 @@ async def upload_document(
     await db.refresh(document)
     await db.refresh(job)
 
+    db.add(
+        models.JobEvent(
+            job_id=job.id,
+            level="info",
+            message="Job queued",
+            step=job.current_step,
+            progress=job.progress,
+        )
+    )
+    await db.commit()
+
     await enqueue_job(str(job.id))
 
     return DocumentUploadResponse(

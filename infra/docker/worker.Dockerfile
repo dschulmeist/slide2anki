@@ -21,6 +21,7 @@ COPY packages/core/slide2anki_core /packages/core/slide2anki_core
 
 # Copy worker code (needed before editable install)
 COPY workers/runner/runner /app/runner
+COPY apps/api /app/apps/api
 
 # Install dependencies
 RUN uv pip install --system -e /packages/core
