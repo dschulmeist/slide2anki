@@ -12,6 +12,10 @@ A sophisticated document-to-flashcard pipeline powered by **multi-agent LangGrap
 - **Provider Agnostic**: Supports OpenAI, Google Gemini, OpenRouter, and local Ollama models
 
 ---
+<img width="1574" height="1100" alt="image" src="https://github.com/user-attachments/assets/9aea863d-6994-4ae3-9add-2e4b336b492e" />
+<img width="1623" height="874" alt="2026-01-12_21-51-23" src="https://github.com/user-attachments/assets/d1aea906-9e2f-4f72-a8fd-1638b0365835" />
+
+
 
 ## Architecture Overview
 
