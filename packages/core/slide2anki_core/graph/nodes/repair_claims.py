@@ -105,12 +105,21 @@ def create_repair_claims_node(
                 repaired = statement.strip()
                 repair_map[index] = repaired
 
+        # Create a copy of claims to avoid mutating state in place
+        updated_claims = list(claims)
+
         repaired_count = 0
         for index in failed_claims:
             new_statement = repair_map.get(index, "").strip()
             if new_statement:
-                claims[index].statement = new_statement
-                claims[index].confidence = min(max(claims[index].confidence, 0.5), 0.7)
+                # Create new Claim with updated fields (immutable update)
+                old_claim = updated_claims[index]
+                updated_claims[index] = old_claim.model_copy(
+                    update={
+                        "statement": new_statement,
+                        "confidence": min(max(old_claim.confidence, 0.5), 0.7),
+                    }
+                )
                 repaired_count += 1
 
         attempt = state.get("attempt", 0) + 1
@@ -118,7 +127,7 @@ def create_repair_claims_node(
 
         return {
             **state,
-            "claims": claims,
+            "claims": updated_claims,
             "attempt": attempt,
             "current_step": "repair_claims",
         }

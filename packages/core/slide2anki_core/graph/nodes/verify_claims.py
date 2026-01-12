@@ -100,21 +100,33 @@ def create_verify_claims_node(
         failed_claims: list[int] = []
         repair_suggestions: dict[int, str] = {}
 
+        # Create a copy of claims to avoid mutating state in place
+        updated_claims = list(claims)
+
         for item in verifications:
             index = item.get("index")
             verdict = str(item.get("verdict", "")).lower()
-            if not isinstance(index, int) or index < 0 or index >= len(claims):
+            if not isinstance(index, int) or index < 0 or index >= len(updated_claims):
                 continue
             if verdict in {"unsupported", "unclear"}:
                 failed_claims.append(index)
                 suggestion = item.get("suggested_statement")
                 if isinstance(suggestion, str) and suggestion.strip():
                     repair_suggestions[index] = suggestion.strip()
-                claims[index].confidence = min(claims[index].confidence, 0.4)
+                # Create new Claim with updated confidence (immutable update)
+                old_claim = updated_claims[index]
+                updated_claims[index] = old_claim.model_copy(
+                    update={"confidence": min(old_claim.confidence, 0.4)}
+                )
             elif verdict == "supported":
-                claims[index].confidence = max(claims[index].confidence, 0.6)
+                # Create new Claim with updated confidence (immutable update)
+                old_claim = updated_claims[index]
+                updated_claims[index] = old_claim.model_copy(
+                    update={"confidence": max(old_claim.confidence, 0.6)}
+                )
 
         needs_repair = bool(failed_claims)
+        claims = updated_claims
         logger.info(f"Verified {len(claims)} claims, {len(failed_claims)} need repair")
 
         return {

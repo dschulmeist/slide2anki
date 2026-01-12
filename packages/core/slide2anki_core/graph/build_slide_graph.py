@@ -23,6 +23,15 @@ def _merge_claims(existing: list[Claim], incoming: list[Claim]) -> list[Claim]:
     return [*existing, *incoming]
 
 
+def _merge_errors(existing: list[str], incoming: list[str]) -> list[str]:
+    """Combine error lists from parallel workers, deduplicating."""
+    if not existing:
+        return list(incoming or [])
+    if not incoming:
+        return list(existing)
+    return list(dict.fromkeys([*existing, *incoming]))
+
+
 def _ignore_slide(existing: Slide | None, incoming: Slide | None) -> Slide | None:
     """Reducer that keeps existing slide value when parallel workers return."""
     return existing if existing is not None else incoming
@@ -46,7 +55,7 @@ class SlidePipelineState(TypedDict, total=False):
     claims: Annotated[list[Claim], _merge_claims]
     max_attempts: int
     current_step: str
-    errors: list[str]
+    errors: Annotated[list[str], _merge_errors]
 
 
 def _dispatch_regions(state: SlidePipelineState) -> list[Send]:

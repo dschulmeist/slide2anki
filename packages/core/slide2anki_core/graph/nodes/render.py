@@ -1,5 +1,6 @@
 """Render node: Convert PDF pages to images."""
 
+import asyncio
 from collections.abc import Callable
 from io import BytesIO
 from typing import Any
@@ -90,6 +91,27 @@ def _analyze_page_content(
     return results
 
 
+def _render_pdf_sync(pdf_data: bytes, dpi: int) -> tuple[list[Any], list[tuple[bool, str | None]]]:
+    """Synchronous PDF rendering - runs in thread pool to avoid blocking.
+
+    Args:
+        pdf_data: Raw PDF bytes
+        dpi: Rendering DPI
+
+    Returns:
+        Tuple of (images list, page_analysis list)
+    """
+    from pdf2image import convert_from_bytes
+
+    # Analyze pages to detect text-only content
+    page_analysis = _analyze_page_content(pdf_data)
+
+    # Convert PDF to images
+    images = convert_from_bytes(pdf_data, dpi=dpi, fmt="PNG")
+
+    return images, page_analysis
+
+
 def create_render_node(dpi: int = 200) -> Callable[[dict[str, Any]], dict[str, Any]]:
     """Create a render node with specified DPI.
 
@@ -97,11 +119,14 @@ def create_render_node(dpi: int = 200) -> Callable[[dict[str, Any]], dict[str, A
         dpi: Resolution for rendering (default 200)
 
     Returns:
-        Node function
+        Node function (async to avoid blocking the event loop)
     """
 
-    def render_node(state: dict[str, Any]) -> dict[str, Any]:
+    async def render_node(state: dict[str, Any]) -> dict[str, Any]:
         """Render PDF pages to images.
+
+        Uses asyncio.to_thread to run blocking PDF operations in a thread pool,
+        preventing the event loop from being blocked during rendering.
 
         Args:
             state: Pipeline state with document
@@ -118,16 +143,9 @@ def create_render_node(dpi: int = 200) -> Callable[[dict[str, Any]], dict[str, A
             }
 
         try:
-            from pdf2image import convert_from_bytes
-
-            # Analyze pages to detect text-only content
-            page_analysis = _analyze_page_content(document.pdf_data)
-
-            # Convert PDF to images
-            images = convert_from_bytes(
-                document.pdf_data,
-                dpi=dpi,
-                fmt="PNG",
+            # Run blocking PDF operations in thread pool
+            images, page_analysis = await asyncio.to_thread(
+                _render_pdf_sync, document.pdf_data, dpi
             )
 
             slides = []
