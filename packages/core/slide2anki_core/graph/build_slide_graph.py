@@ -23,11 +23,26 @@ def _merge_claims(existing: list[Claim], incoming: list[Claim]) -> list[Claim]:
     return [*existing, *incoming]
 
 
+def _ignore_slide(existing: Slide | None, incoming: Slide | None) -> Slide | None:
+    """Reducer that keeps existing slide value when parallel workers return."""
+    return existing if existing is not None else incoming
+
+
+def _ignore_region(
+    existing: SlideRegion | None, incoming: SlideRegion | None
+) -> SlideRegion | None:
+    """Reducer that keeps existing region value when parallel workers return."""
+    return existing if existing is not None else incoming
+
+
 class SlidePipelineState(TypedDict, total=False):
     """State passed through the slide extraction pipeline."""
 
-    slide: Slide
+    # slide: passed to region workers, ignored on return from parallel workers
+    slide: Annotated[Slide | None, _ignore_slide]
     regions: list[SlideRegion]
+    # region: received from parallel region_workers, ignored at parent level
+    region: Annotated[SlideRegion | None, _ignore_region]
     claims: Annotated[list[Claim], _merge_claims]
     max_attempts: int
     current_step: str

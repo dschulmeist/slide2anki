@@ -22,6 +22,16 @@ def _merge_claims(existing: list[Claim], incoming: list[Claim]) -> list[Claim]:
     return [*existing, *incoming]
 
 
+def _ignore_slide(existing: Slide | None, incoming: Slide | None) -> Slide | None:
+    """Reducer that ignores incoming slide values from parallel workers.
+
+    Each slide worker processes its own slide and returns it in state.
+    We don't need to aggregate these at the parent level, so we just
+    keep the existing value (or take the first one if none exists).
+    """
+    return existing if existing is not None else incoming
+
+
 class MarkdownPipelineState(TypedDict, total=False):
     """State passed through the markdown pipeline."""
 
@@ -29,6 +39,8 @@ class MarkdownPipelineState(TypedDict, total=False):
     pdf_data: bytes
     document: Document
     slides: list[Slide]
+    # slide: receives values from parallel slide_workers, ignored at parent level
+    slide: Annotated[Slide | None, _ignore_slide]
     claims: Annotated[list[Claim], _merge_claims]
     markdown_blocks: list[MarkdownBlock]
     markdown_content: str
