@@ -22,33 +22,38 @@ DEFAULT_MAX_ATTEMPTS = 3
 DEFAULT_MIN_WAIT = 1  # seconds
 DEFAULT_MAX_WAIT = 30  # seconds
 
-# Global semaphore for rate limiting concurrent API calls
+# Per-loop semaphore for rate limiting concurrent API calls
 # This prevents overwhelming the API with too many parallel requests
-_api_semaphore: asyncio.Semaphore | None = None
-_semaphore_lock = asyncio.Lock()
+# We store semaphores per event loop to avoid "bound to different event loop" errors
+_loop_semaphores: dict[int, asyncio.Semaphore] = {}
 DEFAULT_MAX_CONCURRENT_CALLS = 5
 
 
-async def get_api_semaphore(
+def get_api_semaphore(
     max_concurrent: int = DEFAULT_MAX_CONCURRENT_CALLS,
 ) -> asyncio.Semaphore:
-    """Get or create the global API rate limiting semaphore.
+    """Get or create an API rate limiting semaphore for the current event loop.
 
     Args:
         max_concurrent: Maximum concurrent API calls allowed
 
     Returns:
-        Shared semaphore instance
+        Semaphore instance for the current event loop
     """
-    global _api_semaphore
-    if _api_semaphore is None:
-        async with _semaphore_lock:
-            if _api_semaphore is None:
-                _api_semaphore = asyncio.Semaphore(max_concurrent)
-                logger.info(
-                    f"Initialized API rate limiter: max {max_concurrent} concurrent calls"
-                )
-    return _api_semaphore
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        # No running loop - create a new semaphore (caller should be in async context)
+        logger.warning("get_api_semaphore called outside event loop, creating new semaphore")
+        return asyncio.Semaphore(max_concurrent)
+
+    loop_id = id(loop)
+    if loop_id not in _loop_semaphores:
+        _loop_semaphores[loop_id] = asyncio.Semaphore(max_concurrent)
+        logger.info(
+            f"Initialized API rate limiter for loop {loop_id}: max {max_concurrent} concurrent calls"
+        )
+    return _loop_semaphores[loop_id]
 
 
 class RateLimitError(Exception):
@@ -144,8 +149,8 @@ async def with_retry(
     attempt = 0
     last_exception = None
 
-    # Get semaphore for rate limiting
-    semaphore = await get_api_semaphore() if use_rate_limit else None
+    # Get semaphore for rate limiting (synchronous, per-loop)
+    semaphore = get_api_semaphore() if use_rate_limit else None
 
     async def _execute() -> Any:
         if semaphore:

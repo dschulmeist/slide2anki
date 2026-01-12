@@ -1,4 +1,8 @@
-"""Google Gemini model adapter."""
+"""xAI Grok model adapter.
+
+Supports Grok 4.x series models via the xAI API.
+Uses OpenAI-compatible Chat Completions API format.
+"""
 
 import asyncio
 import base64
@@ -13,12 +17,18 @@ from slide2anki_core.utils.retry import RateLimitError, with_retry
 
 logger = get_logger(__name__)
 
+# Default timeout for API calls (seconds)
+DEFAULT_TIMEOUT = 120.0
 
-def _wrap_google_error(e: Exception) -> Exception:
-    """Convert Google API errors to standard exceptions for retry handling.
+# xAI API base URL
+XAI_BASE_URL = "https://api.x.ai/v1"
+
+
+def _wrap_xai_error(e: Exception) -> Exception:
+    """Convert xAI API errors to standard exceptions for retry handling.
 
     Args:
-        e: Original exception from Google API
+        e: Original exception from xAI API
 
     Returns:
         Wrapped exception (RateLimitError for rate limits, original otherwise)
@@ -29,32 +39,18 @@ def _wrap_google_error(e: Exception) -> Exception:
     # Check for rate limit / quota errors
     if any(
         indicator in error_str
-        for indicator in [
-            "resource exhausted",
-            "quota",
-            "rate limit",
-            "429",
-            "too many requests",
-        ]
-    ) or error_type in ("ResourceExhausted", "TooManyRequests"):
-        return RateLimitError(f"Google API rate limit: {e}")
+        for indicator in ["rate limit", "quota", "429", "too many requests"]
+    ) or error_type in ("RateLimitError",):
+        return RateLimitError(f"xAI API rate limit: {e}")
 
     # Check for retryable server errors
     if any(
         indicator in error_str
-        for indicator in ["503", "500", "internal", "unavailable", "deadline"]
-    ) or error_type in (
-        "ServiceUnavailable",
-        "InternalServerError",
-        "DeadlineExceeded",
+        for indicator in ["503", "500", "internal", "unavailable", "timeout"]
     ):
-        return ConnectionError(f"Google API server error: {e}")
+        return ConnectionError(f"xAI API server error: {e}")
 
     return e
-
-
-# Default timeout for API calls (seconds)
-DEFAULT_TIMEOUT = 120.0
 
 
 def _parse_json_response(content: str) -> dict[str, Any] | list[dict[str, Any]]:
@@ -74,7 +70,6 @@ def _parse_json_response(content: str) -> dict[str, Any] | list[dict[str, Any]]:
     text = content.strip()
     if text.startswith("```"):
         lines = text.split("\n")
-        # Remove first line (```json or ```) and last line (```)
         if len(lines) >= 2:
             if lines[-1].strip() == "```":
                 lines = lines[1:-1]
@@ -89,115 +84,93 @@ def _parse_json_response(content: str) -> dict[str, Any] | list[dict[str, Any]]:
         return []
 
 
-class GoogleAdapter(BaseModelAdapter):
-    """Adapter for Google Gemini 3 series models.
+class XAIAdapter(BaseModelAdapter):
+    """Adapter for xAI Grok models.
 
     Supports:
-    - Gemini 3 Pro/Flash Preview (latest reasoning models)
-    - Gemini 2.5 Pro/Flash (stable production models)
-    - Gemini 2.0 Flash (efficient model)
+    - Grok 4.1 Fast (reasoning and non-reasoning variants)
+    - Grok 4 Fast (reasoning and non-reasoning variants)
+    - Grok Code Fast 1 (code-focused model)
+
+    Features 2M token context window for large document processing.
     """
 
     def __init__(
         self,
         api_key: str,
-        vision_model: str = "gemini-3-flash-preview",
-        text_model: str = "gemini-3-flash-preview",
+        vision_model: str = "grok-4-1-fast-non-reasoning",
+        text_model: str = "grok-4-1-fast-non-reasoning",
+        base_url: str = XAI_BASE_URL,
         timeout: float = DEFAULT_TIMEOUT,
         max_retries: int = 3,
     ):
-        """Initialize the Google Gemini adapter.
+        """Initialize the xAI Grok adapter.
 
         Args:
-            api_key: Google AI API key
-            vision_model: Model for vision tasks (default: gemini-3-flash)
-            text_model: Model for text tasks (default: gemini-3-flash)
+            api_key: xAI API key
+            vision_model: Model for vision tasks (default: grok-4-1-fast-non-reasoning)
+            text_model: Model for text tasks (default: grok-4-1-fast-non-reasoning)
+            base_url: API base URL (default: https://api.x.ai/v1)
             timeout: Request timeout in seconds
             max_retries: Maximum retry attempts for transient failures
         """
         self.api_key = api_key
         self.vision_model = vision_model
         self.text_model = text_model
+        self.base_url = base_url.rstrip("/")
         self.timeout = timeout
         self.max_retries = max_retries
 
         self._client: Any = None
         logger.info(
-            f"Initialized Google adapter (vision={vision_model}, text={text_model})"
+            f"Initialized xAI adapter (vision={vision_model}, text={text_model})"
         )
 
     @property
     def client(self) -> Any:
-        """Lazy-load the Google Generative AI client."""
+        """Lazy-load the OpenAI-compatible client for xAI."""
         if self._client is None:
-            import google.generativeai as genai
+            from openai import AsyncOpenAI
 
-            genai.configure(api_key=self.api_key)
-            self._client = genai
+            self._client = AsyncOpenAI(
+                api_key=self.api_key,
+                base_url=self.base_url,
+                timeout=self.timeout,
+            )
         return self._client
 
     async def _call_api(
         self,
         model: str,
-        contents: list[Any],
+        messages: list[dict[str, Any]],
         operation_name: str,
-        system_instruction: str | None = None,
     ) -> str:
-        """Call the Google Generative AI API with retry logic.
+        """Call the xAI API with retry logic.
 
         Args:
             model: Model to use
-            contents: Content parts for the request
+            messages: Chat messages
             operation_name: Name for logging
-            system_instruction: Optional system instruction
 
         Returns:
             Response content string
         """
 
         async def _make_request() -> str:
-            """Make a single request to the Gemini API."""
+            """Make a single request to the xAI API."""
             try:
-                model_instance = self.client.GenerativeModel(
-                    model_name=model,
-                    system_instruction=system_instruction,
-                    generation_config={
-                        "response_mime_type": "application/json",
-                    },
-                )
                 response = await asyncio.wait_for(
-                    asyncio.to_thread(
-                        model_instance.generate_content,
-                        contents,
+                    self.client.chat.completions.create(
+                        model=model,
+                        messages=messages,
+                        max_tokens=4096,
+                        response_format={"type": "json_object"},
                     ),
                     timeout=self.timeout,
                 )
-                # Safely extract text from response - handle empty/blocked responses
-                if not response.candidates:
-                    logger.warning(f"{operation_name}: No candidates in response")
-                    return ""
-                candidate = response.candidates[0]
-                # Check finish_reason: 1=STOP (normal), 2=MAX_TOKENS, 3=SAFETY, 4=RECITATION, 5=OTHER
-                finish_reason = getattr(candidate, "finish_reason", None)
-                if finish_reason and finish_reason != 1:
-                    logger.warning(
-                        f"{operation_name}: Response finished with reason {finish_reason}"
-                    )
-                if not candidate.content or not candidate.content.parts:
-                    logger.warning(
-                        f"{operation_name}: No content parts in response (finish_reason={finish_reason})"
-                    )
-                    return ""
-                # Extract text from parts
-                text_parts = [
-                    part.text
-                    for part in candidate.content.parts
-                    if hasattr(part, "text")
-                ]
-                return "".join(text_parts)
+                return response.choices[0].message.content or ""
             except Exception as e:
-                # Wrap Google-specific errors for proper retry handling
-                raise _wrap_google_error(e) from e
+                raise _wrap_xai_error(e) from e
 
         logger.debug(f"Starting {operation_name} with model {model}")
         result = await with_retry(
@@ -214,22 +187,29 @@ class GoogleAdapter(BaseModelAdapter):
         prompt: str,
     ) -> list[dict[str, Any]]:
         """Extract claims from a slide image using vision model."""
+        # Encode image as base64
+        image_b64 = base64.b64encode(image_data).decode("utf-8")
         logger.info(f"Extracting claims from image ({len(image_data)} bytes)")
 
-        # Create image part for Gemini
-        image_part = {
-            "mime_type": "image/png",
-            "data": base64.b64encode(image_data).decode("utf-8"),
-        }
-
-        contents = [
-            prompt,
-            image_part,
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/png;base64,{image_b64}",
+                            "detail": "high",
+                        },
+                    },
+                ],
+            }
         ]
 
         content = await self._call_api(
             model=self.vision_model,
-            contents=contents,
+            messages=messages,
             operation_name="extract_claims",
         )
 
@@ -257,23 +237,34 @@ class GoogleAdapter(BaseModelAdapter):
         Returns:
             Parsed JSON payload (dict or list)
         """
-        contents: list[Any] = []
+        messages: list[dict[str, Any]] = []
         if image_data:
-            image_part = {
-                "mime_type": "image/png",
-                "data": base64.b64encode(image_data).decode("utf-8"),
-            }
-            contents = [prompt, image_part]
+            image_b64 = base64.b64encode(image_data).decode("utf-8")
+            messages.append(
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/png;base64,{image_b64}",
+                                "detail": "high",
+                            },
+                        },
+                    ],
+                }
+            )
             model = self.vision_model
             logger.debug("Using vision model for structured generation")
         else:
-            contents = [prompt]
+            messages.append({"role": "user", "content": prompt})
             model = self.text_model
             logger.debug("Using text model for structured generation")
 
         content = await self._call_api(
             model=model,
-            contents=contents,
+            messages=messages,
             operation_name="generate_structured",
         )
 
@@ -287,11 +278,19 @@ class GoogleAdapter(BaseModelAdapter):
         """Generate flashcard drafts from claims."""
         logger.info(f"Generating cards from {len(claims)} claims")
 
+        messages = [
+            {
+                "role": "system",
+                "content": "You are an expert at creating effective Anki flashcards. "
+                "Output valid JSON only.",
+            },
+            {"role": "user", "content": prompt},
+        ]
+
         content = await self._call_api(
             model=self.text_model,
-            contents=[prompt],
+            messages=messages,
             operation_name="generate_cards",
-            system_instruction="You are an expert at creating effective Anki flashcards. Output valid JSON only.",
         )
 
         data = _parse_json_response(content)
@@ -312,11 +311,19 @@ class GoogleAdapter(BaseModelAdapter):
         """Critique flashcard drafts."""
         logger.info(f"Critiquing {len(cards)} cards")
 
+        messages = [
+            {
+                "role": "system",
+                "content": "You are an expert at evaluating Anki flashcard quality. "
+                "Output valid JSON only.",
+            },
+            {"role": "user", "content": prompt},
+        ]
+
         content = await self._call_api(
             model=self.text_model,
-            contents=[prompt],
+            messages=messages,
             operation_name="critique_cards",
-            system_instruction="You are an expert at evaluating Anki flashcard quality. Output valid JSON only.",
         )
 
         data = _parse_json_response(content)

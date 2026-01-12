@@ -9,7 +9,7 @@ A sophisticated document-to-flashcard pipeline powered by **multi-agent LangGrap
 - **Intelligent Optimization**: Automatic text-only page detection saves 30-60% on API costs
 - **Fault-Tolerant Execution**: PostgreSQL-backed checkpointing enables job resumption after failures
 - **Evidence Traceability**: Every flashcard links back to the exact slide region it came from
-- **Provider Agnostic**: Supports OpenAI, Google Gemini, OpenRouter, and local Ollama models
+- **Provider Agnostic**: Supports OpenAI GPT-5.x, Google Gemini 3, xAI Grok 4, Claude 4.5, and local Ollama models
 
 ---
 
@@ -358,10 +358,11 @@ class BaseModelAdapter(ABC):
 
 | Provider | Adapter | Models | Use Case |
 |----------|---------|--------|----------|
-| **OpenAI** | `OpenAIAdapter` | GPT-4o, GPT-4-turbo | Production, highest quality |
-| **Google** | `GoogleAdapter` | Gemini 2.5 Flash | Cost-effective, fast |
-| **OpenRouter** | `OpenAIAdapter` | Any OpenRouter model | Model flexibility |
-| **Ollama** | `OllamaAdapter` | LLaVA, Llama 3 | Local, privacy-focused |
+| **OpenAI** | `OpenAIAdapter` | GPT-5.2, GPT-5.1, GPT-5-mini, GPT-5-nano | Production, flagship quality |
+| **Google** | `GoogleAdapter` | Gemini 3 Pro/Flash Preview, Gemini 2.5 | Cost-effective, 1M context |
+| **xAI** | `XAIAdapter` | Grok 4.1 Fast, Grok 4 Fast | 2M context window |
+| **OpenRouter** | `OpenAIAdapter` | Any OpenRouter model | Multi-provider access |
+| **Ollama** | `OllamaAdapter` | LLaVA, Llama 3.3, Qwen 2.5 | Local, privacy-focused |
 
 ### Automatic Fallbacks
 
@@ -369,7 +370,7 @@ Adapters handle provider-specific quirks automatically:
 
 ```python
 # OpenAI: Handle max_tokens vs max_completion_tokens
-if _uses_max_completion_tokens(model):  # o1, o3 models
+if _uses_max_completion_tokens(model):  # GPT-5.x, o-series models
     create_kwargs["max_completion_tokens"] = 4096
 else:
     create_kwargs["max_tokens"] = 4096
@@ -378,6 +379,13 @@ else:
 if not response.candidates or not candidate.content.parts:
     logger.warning(f"No content in response (finish_reason={finish_reason})")
     return ""  # Graceful degradation instead of crash
+
+# xAI: Uses OpenAI-compatible API with rate limit handling
+response = await client.chat.completions.create(
+    model="grok-4-1-fast-non-reasoning",
+    messages=messages,
+    max_tokens=4096,
+)
 ```
 
 ---
@@ -484,12 +492,13 @@ cd workers/runner && uv sync && uv run python -m runner.worker  # Worker
 
 Configure the model provider in the web UI at `/settings`:
 
-| Provider | Base URL | Models |
-|----------|----------|--------|
-| OpenAI | (default) | gpt-4o, gpt-4-turbo |
-| OpenRouter | https://openrouter.ai/api/v1 | Any model |
-| Google | (default) | gemini-2.5-flash |
-| Ollama | http://localhost:11434 | llava, llama3 |
+| Provider | Base URL | Recommended Models |
+|----------|----------|--------------------|
+| OpenAI | (default) | gpt-5.2, gpt-5-mini (cost-effective) |
+| Google | (default) | gemini-3-flash-preview, gemini-3-pro-preview |
+| xAI | https://api.x.ai/v1 | grok-4-1-fast-non-reasoning |
+| OpenRouter | https://openrouter.ai/api/v1 | Any model (includes free tiers) |
+| Ollama | http://localhost:11434 | llava, llama3.3 |
 
 ---
 

@@ -1,4 +1,8 @@
-"""OpenAI model adapter."""
+"""OpenAI model adapter.
+
+Supports OpenAI GPT-5.x series and compatible APIs (OpenRouter, Azure OpenAI).
+Uses the Chat Completions API with automatic fallbacks for provider compatibility.
+"""
 
 import asyncio
 import base64
@@ -9,7 +13,7 @@ from slide2anki_core.model_adapters.base import BaseModelAdapter
 from slide2anki_core.schemas.cards import CardDraft
 from slide2anki_core.schemas.claims import Claim
 from slide2anki_core.utils.logging import get_logger
-from slide2anki_core.utils.retry import with_retry
+from slide2anki_core.utils.retry import RateLimitError, with_retry
 
 logger = get_logger(__name__)
 
@@ -17,23 +21,67 @@ logger = get_logger(__name__)
 DEFAULT_TIMEOUT = 120.0
 
 # Models that require max_completion_tokens instead of max_tokens.
-# This includes o1 family and newer gpt-4o versions.
+# Includes o-series reasoning models and GPT-5.x family.
 MODELS_REQUIRING_COMPLETION_TOKENS = frozenset(
     [
+        # o-series reasoning models
         "o1",
         "o1-mini",
         "o1-preview",
         "o1-2024-12-17",
         "o3-mini",
         "o3-mini-2025-01-31",
+        # GPT-5.x series (Dec 2025+)
+        "gpt-5.2",
+        "gpt-5.2-2025-12-11",
+        "gpt-5.2-pro-2025-12-11",
+        "gpt-5.2-chat-latest",
+        "gpt-5.1",
+        "gpt-5.1-2025-11-12",
+        "gpt-5.1-pro-2025-11-12",
+        "gpt-5.1-chat-latest",
+        "gpt-5",
+        "gpt-5-2025-08-07",
+        "gpt-5-mini-2025-08-07",
+        "gpt-5-nano-2025-08-07",
+        "gpt-5-chat-latest",
     ]
 )
+
+
+def _wrap_openai_error(e: Exception) -> Exception:
+    """Convert OpenAI API errors to standard exceptions for retry handling.
+
+    Args:
+        e: Original exception from OpenAI API
+
+    Returns:
+        Wrapped exception (RateLimitError for rate limits, original otherwise)
+    """
+    error_str = str(e).lower()
+    error_type = type(e).__name__
+
+    # Check for rate limit / quota errors
+    if any(
+        indicator in error_str
+        for indicator in ["rate limit", "quota", "429", "too many requests"]
+    ) or error_type in ("RateLimitError", "APIStatusError"):
+        return RateLimitError(f"OpenAI API rate limit: {e}")
+
+    # Check for retryable server errors
+    if any(
+        indicator in error_str
+        for indicator in ["503", "500", "internal", "unavailable", "timeout"]
+    ) or error_type in ("APIConnectionError", "APITimeoutError"):
+        return ConnectionError(f"OpenAI API server error: {e}")
+
+    return e
 
 
 def _uses_max_completion_tokens(model: str) -> bool:
     """Check if a model requires max_completion_tokens instead of max_tokens.
 
-    Some newer OpenAI models (o1 family, o3-mini) use the newer parameter name.
+    GPT-5.x series and o-series reasoning models use max_completion_tokens.
     This function checks both exact matches and prefix matches for versioned models.
 
     Args:
@@ -48,8 +96,8 @@ def _uses_max_completion_tokens(model: str) -> bool:
     if model_lower in MODELS_REQUIRING_COMPLETION_TOKENS:
         return True
 
-    # Check prefix matches for o1/o3 variants (e.g., "o1-preview-2024-09-12")
-    for prefix in ("o1-", "o1_", "o3-", "o3_"):
+    # Check prefix matches for o-series and GPT-5.x variants
+    for prefix in ("o1-", "o1_", "o3-", "o3_", "gpt-5", "gpt-5."):
         if model_lower.startswith(prefix):
             return True
 
@@ -77,13 +125,20 @@ def _parse_json_response(content: str) -> dict[str, Any] | list[dict[str, Any]]:
 
 
 class OpenAIAdapter(BaseModelAdapter):
-    """Adapter for OpenAI models (GPT-4 Vision, GPT-4)."""
+    """Adapter for OpenAI GPT-5.x series and compatible APIs.
+
+    Supports:
+    - OpenAI GPT-5.x series (gpt-5.2, gpt-5.1, gpt-5, gpt-5-mini, gpt-5-nano)
+    - Legacy GPT-4 models (gpt-4o, gpt-4-turbo)
+    - OpenRouter via custom base_url
+    - Azure OpenAI via custom base_url
+    """
 
     def __init__(
         self,
         api_key: str,
-        vision_model: str = "gpt-4o",
-        text_model: str = "gpt-4o",
+        vision_model: str = "gpt-5.2",
+        text_model: str = "gpt-5.2",
         base_url: str | None = None,
         timeout: float = DEFAULT_TIMEOUT,
         max_retries: int = 3,
@@ -92,9 +147,9 @@ class OpenAIAdapter(BaseModelAdapter):
 
         Args:
             api_key: OpenAI API key
-            vision_model: Model for vision tasks
-            text_model: Model for text tasks
-            base_url: Optional custom base URL
+            vision_model: Model for vision tasks (default: gpt-5.2)
+            text_model: Model for text tasks (default: gpt-5.2)
+            base_url: Optional custom base URL for OpenRouter/Azure
             timeout: Request timeout in seconds
             max_retries: Maximum retry attempts for transient failures
         """

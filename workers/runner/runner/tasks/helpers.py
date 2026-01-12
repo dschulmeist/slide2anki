@@ -17,6 +17,7 @@ from redis import Redis
 from slide2anki_core.model_adapters.google import GoogleAdapter
 from slide2anki_core.model_adapters.ollama import OllamaAdapter
 from slide2anki_core.model_adapters.openai import OpenAIAdapter
+from slide2anki_core.model_adapters.xai import XAIAdapter
 from sqlalchemy.orm import Session
 
 from runner.config import settings
@@ -94,8 +95,8 @@ def build_model_adapter(db: Session, models: Any) -> Any:
         return OpenAIAdapter(
             api_key=resolved_key,
             base_url=resolved_base_url,
-            vision_model=model or "gpt-4o",
-            text_model=model or "gpt-4o",
+            vision_model=model or "gpt-5.2",
+            text_model=model or "gpt-5.2",
         )
 
     if provider == "google":
@@ -105,8 +106,19 @@ def build_model_adapter(db: Session, models: Any) -> Any:
 
         return GoogleAdapter(
             api_key=resolved_key,
-            vision_model=model or "gemini-2.5-flash",
-            text_model=model or "gemini-2.5-flash",
+            vision_model=model or "gemini-3-flash-preview",
+            text_model=model or "gemini-3-flash-preview",
+        )
+
+    if provider == "xai":
+        resolved_key = api_key or (settings.xai_api_key or "").strip() or None
+        if not resolved_key:
+            raise ValueError("Missing API key for provider: xai")
+
+        return XAIAdapter(
+            api_key=resolved_key,
+            vision_model=model or "grok-4-1-fast-non-reasoning",
+            text_model=model or "grok-4-1-fast-non-reasoning",
         )
 
     if provider == "ollama":

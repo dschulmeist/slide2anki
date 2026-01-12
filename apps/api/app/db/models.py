@@ -294,7 +294,7 @@ class AppSetting(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
-    provider: Mapped[str] = mapped_column(String(50), default="ollama")
+    provider: Mapped[str] = mapped_column(String(50), default="google")
     model: Mapped[str] = mapped_column(String(255), default="")
     base_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
     api_key: Mapped[str | None] = mapped_column(Text, nullable=True)

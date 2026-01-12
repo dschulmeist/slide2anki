@@ -12,7 +12,7 @@ import { api, AppSettings } from '@/lib/api';
 interface ModelOption {
   id: string;
   name: string;
-  provider: 'openai' | 'anthropic' | 'google' | 'mistral' | 'openrouter' | 'ollama';
+  provider: 'openai' | 'anthropic' | 'google' | 'xai' | 'mistral' | 'openrouter' | 'ollama';
   hasVision: boolean;
   tier: 'flagship' | 'standard' | 'efficient';
   description: string;
@@ -117,7 +117,7 @@ const AVAILABLE_MODELS: ModelOption[] = [
     provider: 'google',
     hasVision: true,
     tier: 'standard',
-    description: 'Fast multimodal model with strong reasoning',
+    description: 'Fast multimodal model with strong reasoning (Recommended)',
     contextTokens: 1048576,
   },
   {
@@ -146,6 +146,51 @@ const AVAILABLE_MODELS: ModelOption[] = [
     tier: 'efficient',
     description: 'Fast and efficient Gemini model',
     contextTokens: 1048576,
+  },
+
+  // xAI Grok Models
+  {
+    id: 'grok-4-1-fast-non-reasoning',
+    name: 'Grok 4.1 Fast',
+    provider: 'xai',
+    hasVision: true,
+    tier: 'flagship',
+    description: 'Latest Grok with 2M context window',
+    inputCost: '$0.20/M',
+    outputCost: '$0.50/M',
+    contextTokens: 2000000,
+  },
+  {
+    id: 'grok-4-1-fast-reasoning',
+    name: 'Grok 4.1 Fast Reasoning',
+    provider: 'xai',
+    hasVision: true,
+    tier: 'flagship',
+    description: 'Grok with enhanced reasoning capabilities',
+    inputCost: '$0.20/M',
+    outputCost: '$0.50/M',
+    contextTokens: 2000000,
+  },
+  {
+    id: 'grok-4-fast-non-reasoning',
+    name: 'Grok 4 Fast',
+    provider: 'xai',
+    hasVision: true,
+    tier: 'standard',
+    description: 'Fast multimodal model',
+    inputCost: '$0.20/M',
+    outputCost: '$0.50/M',
+    contextTokens: 131072,
+  },
+  {
+    id: 'grok-code-fast-1',
+    name: 'Grok Code Fast',
+    provider: 'xai',
+    hasVision: false,
+    tier: 'efficient',
+    description: 'Code-focused Grok model',
+    inputCost: '$0.20/M',
+    outputCost: '$1.50/M',
   },
 
   // Mistral Models
@@ -409,12 +454,13 @@ interface Settings {
   openai_api_key: string;
   anthropic_api_key: string;
   google_api_key: string;
+  xai_api_key: string;
   mistral_api_key: string;
   openrouter_api_key: string;
   mistral_base_url: string;
   openrouter_base_url: string;
   ollama_base_url: string;
-  default_provider: 'openai' | 'anthropic' | 'google' | 'mistral' | 'openrouter' | 'ollama';
+  default_provider: 'openai' | 'anthropic' | 'google' | 'xai' | 'mistral' | 'openrouter' | 'ollama';
   vision_model: string;
   text_model: string;
   max_cards_per_slide: number;
@@ -428,6 +474,8 @@ const PROVIDER_METADATA_NOTES: Record<Settings['default_provider'], string> = {
     'Claude /models returns IDs/display names only; consult Anthropic pricing pages for costs.',
   google:
     'Gemini /models exposes context limits (input/output), but pricing comes from Google Cloud docs.',
+  xai:
+    'xAI /models returns model IDs; Grok 4.1 supports 2M context. Pricing at x.ai/api.',
   mistral:
     'Mistral /models returns max_context_length; pricing is detailed in their pricing guide.',
   openrouter:
@@ -574,6 +622,7 @@ export default function SettingsPage() {
     openai_api_key: '',
     anthropic_api_key: '',
     google_api_key: '',
+    xai_api_key: '',
     mistral_api_key: '',
     openrouter_api_key: '',
     mistral_base_url: 'https://api.mistral.ai/v1',
@@ -691,6 +740,7 @@ export default function SettingsPage() {
       openai: settings.openai_api_key,
       anthropic: settings.anthropic_api_key,
       google: settings.google_api_key,
+      xai: settings.xai_api_key,
       mistral: settings.mistral_api_key,
       openrouter: settings.openrouter_api_key,
       ollama: '',
@@ -700,6 +750,7 @@ export default function SettingsPage() {
       openai: null,
       anthropic: null,
       google: null,
+      xai: null,
       mistral: sanitizeBaseUrl(settings.mistral_base_url || ''),
       openrouter: sanitizeBaseUrl(settings.openrouter_base_url || ''),
       ollama: sanitizeBaseUrl(settings.ollama_base_url || ''),
@@ -836,6 +887,21 @@ export default function SettingsPage() {
           url: `https://generativelanguage.googleapis.com/v1beta/models?key=${key}`,
           options: {
             method: 'GET',
+          },
+        };
+      }
+      case 'xai': {
+        const key = settings.xai_api_key.trim();
+        if (!key) {
+          return { error: 'Provide an xAI API key before pinging.' };
+        }
+        return {
+          url: 'https://api.x.ai/v1/models',
+          options: {
+            method: 'GET',
+            headers: new Headers({
+              Authorization: `Bearer ${key}`,
+            }),
           },
         };
       }
@@ -998,6 +1064,29 @@ export default function SettingsPage() {
           options: {
             method: 'POST',
             headers: new Headers({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify(body),
+          },
+        };
+      }
+      case 'xai': {
+        const key = settings.xai_api_key.trim();
+        if (!key) {
+          return { error: 'Provide an xAI API key before pinging a model.' };
+        }
+        // xAI uses OpenAI-compatible chat completions
+        const body = {
+          model,
+          messages: [{ role: 'user', content: testPrompt }],
+          max_tokens: 50,
+        };
+        return {
+          url: 'https://api.x.ai/v1/chat/completions',
+          options: {
+            method: 'POST',
+            headers: new Headers({
+              Authorization: `Bearer ${key}`,
+              'Content-Type': 'application/json',
+            }),
             body: JSON.stringify(body),
           },
         };
@@ -1220,9 +1309,10 @@ export default function SettingsPage() {
                 }}
                 className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
               >
-                <option value="openai">OpenAI</option>
-                <option value="anthropic">Anthropic (Claude)</option>
-                <option value="google">Google (Gemini)</option>
+                <option value="openai">OpenAI (GPT-5.x)</option>
+                <option value="google">Google (Gemini 3)</option>
+                <option value="xai">xAI (Grok 4.x)</option>
+                <option value="anthropic">Anthropic (Claude 4.5)</option>
                 <option value="mistral">Mistral</option>
                 <option value="openrouter">OpenRouter</option>
                 <option value="ollama">Ollama (Local)</option>
@@ -1369,6 +1459,21 @@ export default function SettingsPage() {
                   setSettings({ ...settings, google_api_key: e.target.value })
                 }
                 placeholder="AIza..."
+                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                xAI API Key
+              </label>
+              <input
+                type="password"
+                value={settings.xai_api_key}
+                onChange={(e) =>
+                  setSettings({ ...settings, xai_api_key: e.target.value })
+                }
+                placeholder="xai-..."
                 className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
               />
             </div>
