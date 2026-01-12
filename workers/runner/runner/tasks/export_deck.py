@@ -2,77 +2,22 @@
 
 from __future__ import annotations
 
-import sys
 import tempfile
-from io import BytesIO
 from pathlib import Path
 from typing import Any
 from uuid import UUID
 
 import structlog
-from minio import Minio
-from minio.error import S3Error
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from runner.config import settings
+from runner.tasks.helpers import ensure_bucket, get_minio_client, get_models, upload_bytes
 from slide2anki_core.exporters.apkg import export_apkg
 from slide2anki_core.exporters.tsv import export_tsv
 from slide2anki_core.schemas.cards import CardDraft, CardStatus
 
 logger = structlog.get_logger()
-
-
-def _ensure_api_on_path() -> None:
-    """Ensure the API package is importable for ORM models."""
-    project_root = Path(__file__).resolve().parents[4]
-    api_path = project_root / "apps" / "api"
-    if api_path.exists() and str(api_path) not in sys.path:
-        sys.path.insert(0, str(api_path))
-
-
-def _get_models() -> Any:
-    """Load SQLAlchemy models from the API package."""
-    _ensure_api_on_path()
-    from app.db import models  # type: ignore
-
-    return models
-
-
-def _get_minio_client() -> Minio:
-    """Create a MinIO client using worker settings."""
-    return Minio(
-        settings.minio_endpoint,
-        access_key=settings.minio_access_key,
-        secret_key=settings.minio_secret_key,
-        secure=settings.minio_secure,
-    )
-
-
-def _ensure_bucket(client: Minio) -> None:
-    """Ensure the MinIO bucket exists for storing exports."""
-    try:
-        if not client.bucket_exists(settings.minio_bucket):
-            client.make_bucket(settings.minio_bucket)
-    except S3Error as exc:
-        if exc.code != "BucketAlreadyOwnedByYou":
-            raise
-
-
-def _upload_bytes(
-    client: Minio,
-    object_key: str,
-    data: bytes,
-    content_type: str,
-) -> None:
-    """Upload bytes to MinIO using the configured bucket."""
-    client.put_object(
-        settings.minio_bucket,
-        object_key,
-        data=BytesIO(data),
-        length=len(data),
-        content_type=content_type,
-    )
 
 
 def _build_card_drafts(rows: list[Any]) -> list[CardDraft]:
@@ -101,12 +46,12 @@ def export_deck(export_id: str) -> dict[str, Any]:
     Returns:
         Export result with object key
     """
-    models = _get_models()
+    models = get_models()
     logger.info("export_started", export_id=export_id)
 
     engine = create_engine(settings.database_url)
-    minio_client = _get_minio_client()
-    _ensure_bucket(minio_client)
+    minio_client = get_minio_client()
+    ensure_bucket(minio_client)
 
     with Session(engine) as db:
         try:
@@ -133,7 +78,7 @@ def export_deck(export_id: str) -> dict[str, Any]:
 
             if export.type == "tsv":
                 content = export_tsv(card_drafts)
-                _upload_bytes(
+                upload_bytes(
                     minio_client,
                     export.object_key,
                     content.encode("utf-8"),
@@ -145,7 +90,7 @@ def export_deck(export_id: str) -> dict[str, Any]:
                     output_path = Path(temp_dir) / f"{deck.name}.apkg"
                     export_apkg(card_drafts, deck.name, output_path)
                     data = output_path.read_bytes()
-                    _upload_bytes(
+                    upload_bytes(
                         minio_client,
                         export.object_key,
                         data,

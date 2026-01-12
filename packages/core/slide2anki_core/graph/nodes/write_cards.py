@@ -31,6 +31,39 @@ Output format (JSON array):
 """
 
 
+def _build_prompt(
+    claims_text: str,
+    max_cards: int | None,
+    focus: dict | None,
+    custom_instructions: str | None,
+) -> str:
+    """Build a prompt that includes optional generation constraints.
+
+    Args:
+        claims_text: Formatted claims text
+        max_cards: Optional maximum number of cards to generate
+        focus: Optional focus configuration dictionary
+        custom_instructions: Optional free-form instruction string
+
+    Returns:
+        Prompt string for card generation
+    """
+    instructions = []
+    if max_cards and max_cards > 0:
+        instructions.append(f"- Generate at most {max_cards} cards.")
+    if focus:
+        focus_items = ", ".join(sorted(focus.keys()))
+        instructions.append(f"- Emphasize: {focus_items}.")
+    if custom_instructions:
+        instructions.append(f"- {custom_instructions.strip()}")
+
+    extra = "\n".join(instructions)
+    if extra:
+        extra = f"\nAdditional instructions:\n{extra}\n"
+
+    return WRITE_CARDS_PROMPT.format(claims=claims_text) + extra
+
+
 def create_write_cards_node(
     adapter: BaseModelAdapter,
 ) -> Callable[[dict[str, Any]], dict[str, Any]]:
@@ -63,7 +96,12 @@ def create_write_cards_node(
 
         # Format claims for prompt
         claims_text = "\n".join(f"- [{c.kind.value}] {c.statement}" for c in claims)
-        prompt = WRITE_CARDS_PROMPT.format(claims=claims_text)
+        prompt = _build_prompt(
+            claims_text=claims_text,
+            max_cards=state.get("max_cards"),
+            focus=state.get("focus"),
+            custom_instructions=state.get("custom_instructions"),
+        )
 
         try:
             # Call LLM
@@ -74,7 +112,6 @@ def create_write_cards_node(
 
             # Create card drafts
             cards = []
-            claim_map = {c.statement: c for c in claims}
 
             for card_data in response:
                 # Try to find matching claim for evidence

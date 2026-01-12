@@ -6,10 +6,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Clock, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 
-import { api, Deck, Job } from '@/lib/api';
+import { api, Job, Project } from '@/lib/api';
 
-interface JobWithDeck extends Job {
-  deck_name: string;
+interface JobWithProject extends Job {
+  project_name: string;
 }
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
@@ -18,29 +18,30 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
  * Render the dashboard with job status updates.
  */
 export default function DashboardPage() {
-  const [jobs, setJobs] = useState<JobWithDeck[]>([]);
+  const [jobs, setJobs] = useState<JobWithProject[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const streamsRef = useRef<Map<string, EventSource>>(new Map());
 
   /**
-   * Load jobs and map deck names for display.
+   * Load jobs and map project names for display.
    */
   const loadJobs = useCallback(async () => {
     setIsLoading(true);
     setErrorMessage(null);
 
     try {
-      const [jobList, deckList] = await Promise.all([
+      const [jobList, projectList] = await Promise.all([
         api.listJobs(),
-        api.listDecks(),
+        api.listProjects(),
       ]);
-      const deckMap = new Map<string, Deck>(
-        deckList.map((deck) => [deck.id, deck])
+      const projectMap = new Map<string, Project>(
+        projectList.map((project) => [project.id, project])
       );
       const hydratedJobs = jobList.map((job) => ({
         ...job,
-        deck_name: deckMap.get(job.deck_id)?.name ?? 'Untitled deck',
+        project_name:
+          projectMap.get(job.project_id)?.name ?? 'Untitled project',
       }));
       setJobs(hydratedJobs);
     } catch (error) {
@@ -187,16 +188,18 @@ export default function DashboardPage() {
                   <div className="flex items-center gap-3">
                     {getStatusIcon(job.status)}
                     <span className="font-medium text-gray-900">
-                      {job.deck_name}
+                      {job.project_name}
                     </span>
                     {getStatusBadge(job.status)}
                   </div>
-                  <a
-                    href={`/review?deckId=${job.deck_id}`}
-                    className="text-sm text-primary-600 hover:text-primary-700"
-                  >
-                    Review Deck
-                  </a>
+                  {job.job_type === 'deck_generation' && job.deck_id && (
+                    <a
+                      href={`/review?deckId=${job.deck_id}`}
+                      className="text-sm text-primary-600 hover:text-primary-700"
+                    >
+                      Review Deck
+                    </a>
+                  )}
                 </div>
 
                 {job.status === 'running' && (

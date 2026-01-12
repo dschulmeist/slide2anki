@@ -12,7 +12,7 @@ _redis: Optional[redis.Redis] = None
 
 QUEUE_NAME = "slide2anki:jobs"
 
-TaskKind = Literal["pipeline", "export"]
+TaskKind = Literal["job", "export"]
 
 
 class TaskPayload(TypedDict):
@@ -31,11 +31,11 @@ async def get_redis() -> redis.Redis:
     return _redis
 
 
-async def enqueue_pipeline_job(job_id: str) -> None:
-    """Add a pipeline job to the processing queue."""
+async def enqueue_job(job_id: str) -> None:
+    """Add a job to the processing queue."""
     client = await get_redis()
     payload: TaskPayload = {
-        "kind": "pipeline",
+        "kind": "job",
         "job_id": job_id,
         "export_id": None,
     }

@@ -7,10 +7,16 @@ from typing import Any, NoReturn
 
 import structlog
 from redis import Redis
+from uuid import UUID
+
+from sqlalchemy import create_engine, select
+from sqlalchemy.orm import Session
 
 from runner.config import settings
+from runner.tasks.build_markdown import run_markdown_build
 from runner.tasks.export_deck import export_deck
-from runner.tasks.run_pipeline import run_pipeline
+from runner.tasks.generate_decks import run_deck_generation
+from runner.tasks.helpers import get_models
 
 logger = structlog.get_logger()
 
@@ -39,15 +45,39 @@ def dequeue_task(redis_conn: Redis, timeout: int = 5) -> dict[str, Any] | None:
     return payload
 
 
+def _dispatch_job(job_id: str) -> None:
+    """Dispatch a job based on its job_type."""
+    models = get_models()
+    engine = create_engine(settings.database_url)
+    session = Session(engine)
+
+    with session as db:
+        job = db.execute(
+            select(models.Job).where(models.Job.id == UUID(job_id))
+        ).scalar_one_or_none()
+        if not job:
+            logger.warning("job_not_found", job_id=job_id)
+            return
+
+        if job.job_type == "markdown_build":
+            run_markdown_build(job_id)
+            return
+        if job.job_type == "deck_generation":
+            run_deck_generation(job_id)
+            return
+
+        logger.warning("unknown_job_type", job_id=job_id, job_type=job.job_type)
+
+
 def handle_task(payload: dict[str, Any]) -> None:
     """Dispatch a task payload to the correct handler."""
     kind = payload.get("kind")
-    if kind == "pipeline":
+    if kind == "job":
         job_id = payload.get("job_id")
         if not isinstance(job_id, str):
             logger.warning("missing_job_id", payload=payload)
             return
-        run_pipeline(job_id)
+        _dispatch_job(job_id)
         return
 
     if kind == "export":

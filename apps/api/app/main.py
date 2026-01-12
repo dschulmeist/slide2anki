@@ -1,3 +1,5 @@
+"""FastAPI application entry point."""
+
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
@@ -5,7 +7,17 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.db.session import init_db
-from app.routers import auth, decks, exports, health, jobs, review, uploads
+from app.routers import (
+    auth,
+    decks,
+    documents,
+    exports,
+    health,
+    jobs,
+    markdown,
+    projects,
+    review,
+)
 from app.services.storage import init_storage
 from app.settings import settings
 
@@ -40,8 +52,10 @@ app.add_middleware(
 # Include routers
 app.include_router(health.router, prefix="/api/v1", tags=["health"])
 app.include_router(auth.router, prefix="/api/v1", tags=["auth"])
+app.include_router(projects.router, prefix="/api/v1", tags=["projects"])
+app.include_router(documents.router, prefix="/api/v1", tags=["documents"])
+app.include_router(markdown.router, prefix="/api/v1", tags=["markdown"])
 app.include_router(decks.router, prefix="/api/v1", tags=["decks"])
-app.include_router(uploads.router, prefix="/api/v1", tags=["uploads"])
 app.include_router(jobs.router, prefix="/api/v1", tags=["jobs"])
 app.include_router(review.router, prefix="/api/v1", tags=["review"])
 app.include_router(exports.router, prefix="/api/v1", tags=["exports"])

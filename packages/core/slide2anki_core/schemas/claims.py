@@ -18,6 +18,9 @@ class BoundingBox(BaseModel):
 class Evidence(BaseModel):
     """Evidence linking a claim to its source."""
 
+    document_id: Optional[str] = Field(
+        None, description="Optional document identifier for multi-doc projects"
+    )
     slide_index: int = Field(..., description="Which slide this evidence is from")
     bbox: Optional[BoundingBox] = Field(None, description="Region on the slide")
     text_snippet: Optional[str] = Field(None, description="Relevant text excerpt")
@@ -44,4 +47,5 @@ class Claim(BaseModel):
     evidence: Evidence = Field(..., description="Source evidence")
 
     def __hash__(self) -> int:
+        """Provide a stable hash for claim deduplication."""
         return hash((self.kind, self.statement, self.evidence.slide_index))

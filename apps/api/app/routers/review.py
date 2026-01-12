@@ -3,17 +3,17 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import models
 from app.db.session import get_db
 from app.schemas.api import (
-    CardDraftResponse,
     CardDraftListResponse,
+    CardDraftResponse,
     CardDraftUpdate,
-    SlideResponse,
     SlideListResponse,
+    SlideResponse,
 )
 from app.services.storage import get_presigned_url
 
@@ -58,7 +58,7 @@ async def update_card(
     updates: CardDraftUpdate,
     db: AsyncSession = Depends(get_db),
 ) -> CardDraftResponse:
-    """Update a card draft (edit content, approve, reject)."""
+    """Update a card draft and append a revision entry."""
     result = await db.execute(
         select(models.CardDraft).where(models.CardDraft.id == card_id)
     )
@@ -66,26 +66,44 @@ async def update_card(
     if not card:
         raise HTTPException(status_code=404, detail="Card not found")
 
-    # Apply updates
     update_data = updates.model_dump(exclude_unset=True)
     for key, value in update_data.items():
         setattr(card, key, value)
+
+    revision_number = await db.execute(
+        select(func.max(models.CardRevision.revision_number)).where(
+            models.CardRevision.card_id == card.id
+        )
+    )
+    next_revision = (revision_number.scalar_one() or 0) + 1
+
+    db.add(
+        models.CardRevision(
+            card_id=card.id,
+            revision_number=next_revision,
+            front=card.front,
+            back=card.back,
+            tags=card.tags or [],
+            edited_by="user",
+        )
+    )
 
     await db.commit()
     await db.refresh(card)
     return CardDraftResponse.model_validate(card)
 
 
-@router.get("/decks/{deck_id}/slides", response_model=SlideListResponse)
+@router.get("/projects/{project_id}/slides", response_model=SlideListResponse)
 async def list_slides(
-    deck_id: UUID,
+    project_id: UUID,
     db: AsyncSession = Depends(get_db),
 ) -> SlideListResponse:
-    """List slides for a deck."""
+    """List slides for a project."""
     result = await db.execute(
         select(models.Slide)
-        .where(models.Slide.deck_id == deck_id)
-        .order_by(models.Slide.page_index)
+        .join(models.Document, models.Slide.document_id == models.Document.id)
+        .where(models.Document.project_id == project_id)
+        .order_by(models.Slide.document_id, models.Slide.page_index)
     )
     slides = result.scalars().all()
     slide_responses = []
@@ -93,7 +111,7 @@ async def list_slides(
         slide_responses.append(
             SlideResponse(
                 id=slide.id,
-                deck_id=slide.deck_id,
+                document_id=slide.document_id,
                 page_index=slide.page_index,
                 image_object_key=slide.image_object_key,
                 image_url=await get_presigned_url(slide.image_object_key),

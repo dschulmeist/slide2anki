@@ -41,6 +41,9 @@ Evidence rules:
 - include only evidence that is explicitly visible on the slide
 - if unsure about bbox, omit the evidence field entirely
 
+Formula rules:
+- if kind is "formula", the statement should be LaTeX only (no surrounding $)
+
 Only include claims that are explicitly visible on the slide.
 Do not infer or add information not shown.
 """

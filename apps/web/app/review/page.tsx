@@ -7,7 +7,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight, Check, X, Flag } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 
-import { api, CardDraft, Slide } from '@/lib/api';
+import { api, CardDraft, Deck, Slide } from '@/lib/api';
 
 interface EvidenceBox {
   x: number;
@@ -17,27 +17,33 @@ interface EvidenceBox {
 }
 
 /**
- * Extract the first evidence box from a card, if present.
+ * Evidence metadata used to locate slides and render highlights.
  */
-const getEvidenceBox = (card: CardDraft): EvidenceBox | null => {
-  const evidence = card.evidence_json;
-  if (!Array.isArray(evidence) || evidence.length === 0) {
-    return null;
-  }
-  const first = evidence[0] as { bbox?: EvidenceBox };
-  return first?.bbox ?? null;
-};
+interface EvidenceMeta {
+  documentId: string | null;
+  slideIndex: number | null;
+  bbox: EvidenceBox | null;
+}
 
 /**
- * Extract the slide index from evidence metadata.
+ * Extract evidence metadata for slide lookup and highlighting.
  */
-const getSlideIndex = (card: CardDraft): number | null => {
+const getEvidenceMeta = (card: CardDraft): EvidenceMeta => {
   const evidence = card.evidence_json;
   if (!Array.isArray(evidence) || evidence.length === 0) {
-    return null;
+    return { documentId: null, slideIndex: null, bbox: null };
   }
-  const first = evidence[0] as { slide_index?: number };
-  return typeof first.slide_index === 'number' ? first.slide_index : null;
+  const first = evidence[0] as {
+    document_id?: string;
+    slide_index?: number;
+    bbox?: EvidenceBox;
+  };
+  return {
+    documentId: first?.document_id ?? null,
+    slideIndex:
+      typeof first?.slide_index === 'number' ? first.slide_index : null,
+    bbox: first?.bbox ?? null,
+  };
 };
 
 /**
@@ -57,6 +63,7 @@ export default function ReviewPage() {
   const deckId = searchParams.get('deckId');
   const [cards, setCards] = useState<CardDraft[]>([]);
   const [slides, setSlides] = useState<Slide[]>([]);
+  const [deck, setDeck] = useState<Deck | null>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -75,12 +82,14 @@ export default function ReviewPage() {
     setErrorMessage(null);
 
     try {
+      const deckResponse = await api.getDeck(deckId);
       const [cardList, slideList] = await Promise.all([
         api.listCards(deckId),
-        api.listSlides(deckId),
+        api.listSlides(deckResponse.project_id),
       ]);
       setCards(cardList);
       setSlides(slideList);
+      setDeck(deckResponse);
       setCurrentIndex(0);
     } catch (error) {
       const message =
@@ -96,16 +105,20 @@ export default function ReviewPage() {
   }, [loadReviewData]);
 
   const currentCard = cards[currentIndex];
-  const currentSlideIndex = currentCard ? getSlideIndex(currentCard) : null;
-  const evidenceBox = currentCard ? getEvidenceBox(currentCard) : null;
+  const evidenceMeta = currentCard ? getEvidenceMeta(currentCard) : null;
+  const evidenceBox = evidenceMeta?.bbox ?? null;
   const currentSlide = useMemo(() => {
-    if (currentSlideIndex === null) {
+    if (!evidenceMeta?.documentId || evidenceMeta.slideIndex === null) {
       return null;
     }
     return (
-      slides.find((slide) => slide.page_index === currentSlideIndex) || null
+      slides.find(
+        (slide) =>
+          slide.document_id === evidenceMeta.documentId &&
+          slide.page_index === evidenceMeta.slideIndex
+      ) || null
     );
-  }, [currentSlideIndex, slides]);
+  }, [evidenceMeta, slides]);
 
   /**
    * Update card status locally and persist to the API.

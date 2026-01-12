@@ -1,5 +1,5 @@
 /**
- * Landing page with PDF upload flow.
+ * Landing page with project creation and document upload flow.
  */
 'use client';
 
@@ -9,12 +9,11 @@ import { Upload, FileText, Zap, CheckCircle } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
 import { api } from '@/lib/api';
-import { useStore } from '@/lib/store';
 
 /**
- * Normalize a PDF filename into a human-readable deck name.
+ * Normalize a PDF filename into a human-readable project name.
  */
-const normalizeDeckName = (filename: string): string => {
+const normalizeProjectName = (filename: string): string => {
   return filename.replace(/\.pdf$/i, '').replace(/[_-]+/g, ' ').trim();
 };
 
@@ -23,17 +22,16 @@ const normalizeDeckName = (filename: string): string => {
  */
 export default function Home() {
   const router = useRouter();
-  const setActiveJobId = useStore((state) => state.setActiveJobId);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [projectName, setProjectName] = useState('');
 
   /**
-   * Handle the uploaded file by creating a deck and starting a job.
+   * Handle uploaded files by creating a project and uploading documents.
    */
   const onDrop = useCallback(
     async (acceptedFiles: File[]) => {
-      const file = acceptedFiles[0];
-      if (!file || isUploading) {
+      if (!acceptedFiles.length || isUploading) {
         return;
       }
 
@@ -41,11 +39,17 @@ export default function Home() {
       setIsUploading(true);
 
       try {
-        const deckName = normalizeDeckName(file.name || 'Untitled Deck');
-        const deck = await api.createDeck(deckName);
-        const upload = await api.uploadPdf(deck.id, file);
-        setActiveJobId(upload.job_id);
-        router.push('/dashboard');
+        const firstFile = acceptedFiles[0];
+        const resolvedName =
+          projectName.trim() ||
+          normalizeProjectName(firstFile.name || 'Untitled Project');
+        const project = await api.createProject(resolvedName);
+
+        for (const file of acceptedFiles) {
+          await api.uploadDocument(project.id, file);
+        }
+
+        router.push(`/projects/${project.id}`);
       } catch (error) {
         const message =
           error instanceof Error ? error.message : 'Upload failed';
@@ -54,7 +58,7 @@ export default function Home() {
         setIsUploading(false);
       }
     },
-    [isUploading, router, setActiveJobId]
+    [isUploading, projectName, router]
   );
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
@@ -62,7 +66,7 @@ export default function Home() {
     accept: {
       'application/pdf': ['.pdf'],
     },
-    maxFiles: 1,
+    maxFiles: 20,
     disabled: isUploading,
   });
 
@@ -76,6 +80,19 @@ export default function Home() {
           Upload a PDF and let our AI pipeline extract knowledge, generate
           cards, and help you learn more effectively.
         </p>
+
+        <div className="mb-6 text-left">
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Project name (optional)
+          </label>
+          <input
+            type="text"
+            value={projectName}
+            onChange={(event) => setProjectName(event.target.value)}
+            placeholder="Biology 101"
+            className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+          />
+        </div>
 
         {/* Upload Zone */}
         <div
@@ -93,10 +110,10 @@ export default function Home() {
           ) : (
             <>
               <p className="text-gray-600 font-medium mb-2">
-                Drag and drop a PDF here, or click to select
+                Drag and drop PDFs here, or click to select
               </p>
               <p className="text-sm text-gray-400">
-                {isUploading ? 'Uploading...' : 'Supports PDF files only'}
+                {isUploading ? 'Uploading...' : 'Supports multiple PDFs'}
               </p>
             </>
           )}

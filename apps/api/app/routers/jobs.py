@@ -11,21 +11,28 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import models
 from app.db.session import get_db
-from app.schemas.api import JobCreate, JobResponse, JobListResponse
-from app.services.queue import enqueue_pipeline_job, subscribe_progress
+from app.schemas.api import JobCreate, JobListResponse, JobResponse
+from app.services.queue import enqueue_job, subscribe_progress
 
 router = APIRouter()
 
 
 @router.get("/jobs", response_model=JobListResponse)
 async def list_jobs(
+    project_id: Optional[UUID] = None,
     deck_id: Optional[UUID] = None,
+    document_id: Optional[UUID] = None,
     db: AsyncSession = Depends(get_db),
 ) -> JobListResponse:
-    """List jobs, optionally filtered by deck."""
+    """List jobs, optionally filtered by project, deck, or document."""
     query = select(models.Job).order_by(models.Job.created_at.desc())
+    if project_id:
+        query = query.where(models.Job.project_id == project_id)
     if deck_id:
         query = query.where(models.Job.deck_id == deck_id)
+    if document_id:
+        query = query.where(models.Job.document_id == document_id)
+
     result = await db.execute(query)
     jobs = result.scalars().all()
     return JobListResponse(jobs=[JobResponse.model_validate(j) for j in jobs])
@@ -33,44 +40,45 @@ async def list_jobs(
 
 @router.post("/jobs", response_model=JobResponse, status_code=201)
 async def create_job(
-    job: JobCreate,
+    payload: JobCreate,
     db: AsyncSession = Depends(get_db),
 ) -> JobResponse:
-    """Create and enqueue a new processing job."""
-    # Verify deck exists
-    result = await db.execute(select(models.Deck).where(models.Deck.id == job.deck_id))
-    deck = result.scalar_one_or_none()
-    if not deck:
-        raise HTTPException(status_code=404, detail="Deck not found")
+    """Create and enqueue a new job."""
+    project = await db.get(models.Project, payload.project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
 
-    upload_id = job.upload_id
-    if not upload_id:
-        upload_result = await db.execute(
-            select(models.Upload)
-            .where(models.Upload.deck_id == job.deck_id)
-            .order_by(models.Upload.created_at.desc())
-        )
-        upload = upload_result.scalar_one_or_none()
-        if not upload:
-            raise HTTPException(status_code=400, detail="No upload found for deck")
-        upload_id = upload.id
+    if payload.job_type == "markdown_build":
+        if not payload.document_id:
+            raise HTTPException(status_code=400, detail="document_id is required")
+        document = await db.get(models.Document, payload.document_id)
+        if not document or document.project_id != project.id:
+            raise HTTPException(status_code=404, detail="Document not found")
+    elif payload.job_type == "deck_generation":
+        if not payload.deck_id:
+            raise HTTPException(status_code=400, detail="deck_id is required")
+        deck = await db.get(models.Deck, payload.deck_id)
+        if not deck or deck.project_id != project.id:
+            raise HTTPException(status_code=404, detail="Deck not found")
+    else:
+        raise HTTPException(status_code=400, detail="Unsupported job type")
 
-    # Create job record
-    db_job = models.Job(
-        deck_id=job.deck_id,
-        upload_id=upload_id,
+    job = models.Job(
+        project_id=payload.project_id,
+        document_id=payload.document_id,
+        deck_id=payload.deck_id,
+        job_type=payload.job_type,
         status="pending",
         progress=0,
         current_step="queued",
     )
-    db.add(db_job)
+    db.add(job)
     await db.commit()
-    await db.refresh(db_job)
+    await db.refresh(job)
 
-    # Enqueue for processing
-    await enqueue_pipeline_job(str(db_job.id))
+    await enqueue_job(str(job.id))
 
-    return JobResponse.model_validate(db_job)
+    return JobResponse.model_validate(job)
 
 
 @router.get("/jobs/{job_id}", response_model=JobResponse)

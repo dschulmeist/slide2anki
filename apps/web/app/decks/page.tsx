@@ -5,6 +5,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { FolderOpen, FileText, MoreVertical, Download } from 'lucide-react';
+import { useSearchParams } from 'next/navigation';
 
 import { api, Deck } from '@/lib/api';
 
@@ -14,6 +15,8 @@ type DeckStatus = 'processing' | 'ready' | 'exported' | 'created';
  * Render the decks page with export actions.
  */
 export default function DecksPage() {
+  const searchParams = useSearchParams();
+  const projectId = searchParams.get('projectId') || undefined;
   const [decks, setDecks] = useState<Deck[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -26,7 +29,7 @@ export default function DecksPage() {
     setIsLoading(true);
     setErrorMessage(null);
     try {
-      const deckList = await api.listDecks();
+      const deckList = await api.listDecks(projectId);
       setDecks(deckList);
     } catch (error) {
       const message =
@@ -35,7 +38,7 @@ export default function DecksPage() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [projectId]);
 
   useEffect(() => {
     loadDecks();
@@ -100,10 +103,10 @@ export default function DecksPage() {
       <div className="flex items-center justify-between mb-8">
         <h1 className="text-2xl font-bold text-gray-900">My Decks</h1>
         <a
-          href="/"
+          href="/projects"
           className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
         >
-          New Upload
+          View Projects
         </a>
       </div>
 

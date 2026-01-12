@@ -131,6 +131,11 @@ GenerationConfig
 
 ## Phased Implementation Plan
 
+Phase 0: Data Model and Migrations
+- Introduce Project, Document, Chapter, MarkdownVersion, MarkdownBlock, GenerationConfig, CardRevision.
+- Update Deck and CardDraft to reference chapters and markdown anchors.
+- Adopt Alembic for schema evolution and generate a baseline migration.
+
 Phase 1: Project + Multi-Document Ingest
 - Add Project and Document entities.
 - Attach uploads to a project.
@@ -163,3 +168,38 @@ Phase 5: Asset Masking
 ## Notes on the Current Prototype
 
 The current prototype runs a slide-based pipeline and stores slides, claims, and cards. The spec above adds a new canonical markdown layer and reorganizes card generation as a derived, user-triggered step.
+
+
+risiken die chagpt genannt hat:
+2) Automatische Kapitel-Erkennung
+
+Das ist der wackeligste Punkt.
+
+Slides sind oft:
+• inkonsistent betitelt
+• visuell statt strukturell gegliedert
+• mit Wiederholungen und Einschüben
+
+Deine Mitigation („user edits, reorder, deterministic IDs“) ist gut, aber:
+
+Mein Rat:
+• Baue Kapitelerkennung als assistiven Vorschlag, nicht als harte Wahrheit
+• UI sollte „Split chapter here“ und „Merge with previous“ als First-Class-Aktion haben
+
+Technisch passt das, aber UX ist hier entscheidend.
+
+3) Dedup auf Block-Ebene kann semantische Nuancen plattbügeln
+
+Auch mit „merge with citations“:
+
+Beispiel:
+• Block A: „ATP is produced in mitochondria“
+• Block B: „Most ATP is produced in mitochondria during oxidative phosphorylation“
+
+Automatische Dedup-Logik könnte das zusammenziehen, obwohl didaktisch wichtig ist, dass „most“ und „mechanism“ separat sind.
+
+Deine Mitigation ist gut, aber:
+• Dedup sollte immer Vorschlag, nicht Auto-Commit sein
+• UI sollte Merge-Entscheidung sichtbar machen
+
+Sonst wird das System „zu clever“.
