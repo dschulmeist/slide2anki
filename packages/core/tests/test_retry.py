@@ -1,10 +1,8 @@
 """Tests for retry utilities."""
 
-import asyncio
-
 import pytest
 
-from slide2anki_core.utils.retry import with_retry, DEFAULT_MAX_ATTEMPTS
+from slide2anki_core.utils.retry import with_retry
 
 
 class TestRetry:
@@ -55,7 +53,7 @@ class TestRetry:
             nonlocal call_count
             call_count += 1
             if call_count < 2:
-                raise asyncio.TimeoutError("Timed out")
+                raise TimeoutError("Timed out")
             return "success"
 
         result = await with_retry(

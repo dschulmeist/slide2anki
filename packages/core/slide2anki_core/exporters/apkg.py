@@ -2,8 +2,8 @@
 
 import hashlib
 import tempfile
-from io import BytesIO
 from pathlib import Path
+from typing import Any
 
 from slide2anki_core.evidence.crop import CropError, crop_evidence
 from slide2anki_core.schemas.cards import CardDraft, CardStatus
@@ -36,7 +36,9 @@ def export_apkg(
     """
     import genanki
 
-    logger.info(f"Exporting APKG: {deck_name} ({len(cards)} cards, embed_evidence={embed_evidence})")
+    logger.info(
+        f"Exporting APKG: {deck_name} ({len(cards)} cards, embed_evidence={embed_evidence})"
+    )
 
     # Filter cards if needed
     if only_approved:
@@ -133,7 +135,7 @@ def export_apkg(
     return output_path
 
 
-def _create_basic_model(model_id: int, deck_name: str) -> "genanki.Model":
+def _create_basic_model(model_id: int, deck_name: str) -> Any:
     """Create a basic Anki model with Front/Back fields."""
     import genanki
 
@@ -163,7 +165,7 @@ def _create_basic_model(model_id: int, deck_name: str) -> "genanki.Model":
     )
 
 
-def _create_model_with_evidence(model_id: int, deck_name: str) -> "genanki.Model":
+def _create_model_with_evidence(model_id: int, deck_name: str) -> Any:
     """Create an Anki model with Front/Back/Evidence fields."""
     import genanki
 
@@ -271,7 +273,9 @@ def _create_evidence_html(
         media_files.append(str(filepath))
 
         # Generate HTML
-        html_parts.append(f'<img src="{filename}" alt="Evidence from slide {slide_idx + 1}">')
+        html_parts.append(
+            f'<img src="{filename}" alt="Evidence from slide {slide_idx + 1}">'
+        )
 
         # Add text snippet if available
         if evidence.text_snippet:

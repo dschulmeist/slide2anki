@@ -9,6 +9,9 @@ from typing import Any
 from uuid import UUID
 
 import structlog
+from slide2anki_core.graph import build_markdown_graph
+from slide2anki_core.schemas.claims import Claim
+from slide2anki_core.schemas.markdown import MarkdownBlock
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session
 
@@ -24,12 +27,8 @@ from runner.tasks.helpers import (
     update_job_progress,
     upload_bytes,
 )
-from slide2anki_core.graph import build_markdown_graph
-from slide2anki_core.schemas.claims import Claim
-from slide2anki_core.schemas.markdown import MarkdownBlock
 
 logger = structlog.get_logger()
-
 
 
 def _normalize_title(filename: str) -> str:
@@ -185,17 +184,13 @@ def run_markdown_build(job_id: str) -> dict[str, Any]:
                 raise ValueError("Job missing document_id")
 
             document = db.execute(
-                select(models.Document).where(
-                    models.Document.id == job.document_id
-                )
+                select(models.Document).where(models.Document.id == job.document_id)
             ).scalar_one_or_none()
             if not document:
                 raise ValueError(f"Document not found: {job.document_id}")
 
             project = db.execute(
-                select(models.Project).where(
-                    models.Project.id == job.project_id
-                )
+                select(models.Project).where(models.Project.id == job.project_id)
             ).scalar_one_or_none()
             if not project:
                 raise ValueError(f"Project not found: {job.project_id}")
@@ -236,9 +231,7 @@ def run_markdown_build(job_id: str) -> dict[str, Any]:
 
             existing_slides = (
                 db.execute(
-                    select(models.Slide).where(
-                        models.Slide.document_id == document.id
-                    )
+                    select(models.Slide).where(models.Slide.document_id == document.id)
                 )
                 .scalars()
                 .all()
@@ -271,9 +264,7 @@ def run_markdown_build(job_id: str) -> dict[str, Any]:
             db.add_all(slide_records)
             db.flush()
 
-            slide_id_by_index = {
-                slide.page_index: slide.id for slide in slide_records
-            }
+            slide_id_by_index = {slide.page_index: slide.id for slide in slide_records}
             _persist_claims(
                 db,
                 models,
@@ -285,9 +276,7 @@ def run_markdown_build(job_id: str) -> dict[str, Any]:
             update_job_progress(db, job, 80, "Saving markdown")
 
             chapter_title = _normalize_title(document.filename)
-            chapter = _get_or_create_chapter(
-                db, models, project.id, chapter_title
-            )
+            chapter = _get_or_create_chapter(db, models, project.id, chapter_title)
 
             existing_blocks = (
                 db.execute(
@@ -302,9 +291,7 @@ def run_markdown_build(job_id: str) -> dict[str, Any]:
                 db.delete(block)
             db.flush()
 
-            _persist_blocks(
-                db, models, blocks, project.id, chapter.id, document.id
-            )
+            _persist_blocks(db, models, blocks, project.id, chapter.id, document.id)
 
             markdown_content = _build_project_markdown(db, models, project.id)
             latest_version = db.execute(

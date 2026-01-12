@@ -271,7 +271,7 @@ export default function ReviewClient() {
             No cards to review
           </h3>
           <p className="text-gray-500 mb-4">
-            This deck doesn't have any cards yet
+            This deck does not have any cards yet
           </p>
           <a
             href="/dashboard"
@@ -312,6 +312,7 @@ export default function ReviewClient() {
             </h2>
             {currentSlide?.image_url ? (
               <div className="relative">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={currentSlide.image_url}
                   alt={`Slide ${evidenceMeta?.slideIndex ?? ''}`}

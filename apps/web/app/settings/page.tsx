@@ -579,9 +579,9 @@ export default function SettingsPage() {
     mistral_base_url: 'https://api.mistral.ai/v1',
     openrouter_base_url: 'https://openrouter.ai/api/v1',
     ollama_base_url: 'http://localhost:11434',
-    default_provider: 'openai',
-    vision_model: 'gpt-5.2',
-    text_model: 'gpt-5.2',
+    default_provider: 'google',
+    vision_model: 'gemini-3-flash-preview',
+    text_model: 'gemini-3-flash-preview',
     max_cards_per_slide: 5,
     auto_dedupe: true,
   });

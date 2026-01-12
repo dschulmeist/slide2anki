@@ -5,11 +5,10 @@ import signal
 import sys
 from datetime import datetime
 from typing import Any, NoReturn
+from uuid import UUID
 
 import structlog
 from redis import Redis
-from uuid import UUID
-
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 

@@ -24,9 +24,7 @@ async def _load_project_counts(
         )
     )
     deck_count = await db.execute(
-        select(func.count(models.Deck.id)).where(
-            models.Deck.project_id == project_id
-        )
+        select(func.count(models.Deck.id)).where(models.Deck.project_id == project_id)
     )
     return document_count.scalar_one(), deck_count.scalar_one()
 

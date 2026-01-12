@@ -167,7 +167,9 @@ class OpenAIAdapter(BaseModelAdapter):
             )
             return response.choices[0].message.content or ""
 
-        async def _make_request_with_completion_tokens(use_response_format: bool) -> str:
+        async def _make_request_with_completion_tokens(
+            use_response_format: bool,
+        ) -> str:
             """Fallback request using max_completion_tokens instead of max_tokens."""
             create_kwargs: dict[str, Any] = {
                 "model": model,

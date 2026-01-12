@@ -1,11 +1,11 @@
 """Retry utilities for robust API calls."""
 
 import asyncio
-from typing import Any, Callable, TypeVar
+from collections.abc import Callable
+from typing import Any, TypeVar
 
 from tenacity import (
     AsyncRetrying,
-    RetryError,
     retry_if_exception_type,
     stop_after_attempt,
     wait_exponential,
@@ -29,7 +29,9 @@ _semaphore_lock = asyncio.Lock()
 DEFAULT_MAX_CONCURRENT_CALLS = 5
 
 
-async def get_api_semaphore(max_concurrent: int = DEFAULT_MAX_CONCURRENT_CALLS) -> asyncio.Semaphore:
+async def get_api_semaphore(
+    max_concurrent: int = DEFAULT_MAX_CONCURRENT_CALLS,
+) -> asyncio.Semaphore:
     """Get or create the global API rate limiting semaphore.
 
     Args:
@@ -43,14 +45,18 @@ async def get_api_semaphore(max_concurrent: int = DEFAULT_MAX_CONCURRENT_CALLS) 
         async with _semaphore_lock:
             if _api_semaphore is None:
                 _api_semaphore = asyncio.Semaphore(max_concurrent)
-                logger.info(f"Initialized API rate limiter: max {max_concurrent} concurrent calls")
+                logger.info(
+                    f"Initialized API rate limiter: max {max_concurrent} concurrent calls"
+                )
     return _api_semaphore
 
 
 class RateLimitError(Exception):
     """Raised when API rate limit is exceeded."""
 
-    def __init__(self, message: str = "Rate limit exceeded", retry_after: float | None = None):
+    def __init__(
+        self, message: str = "Rate limit exceeded", retry_after: float | None = None
+    ):
         super().__init__(message)
         self.retry_after = retry_after
 
@@ -151,7 +157,9 @@ async def with_retry(
         with attempt_ctx:
             attempt += 1
             if attempt > 1:
-                logger.info(f"Retrying {operation_name} (attempt {attempt}/{max_attempts})")
+                logger.info(
+                    f"Retrying {operation_name} (attempt {attempt}/{max_attempts})"
+                )
             try:
                 return await _execute()
             except RETRYABLE_EXCEPTIONS as e:

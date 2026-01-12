@@ -55,9 +55,7 @@ def _build_prompt(
     if focus:
         focus_items: list[str] = []
         if isinstance(focus, dict):
-            focus_items = [
-                str(key).strip() for key, value in focus.items() if value
-            ]
+            focus_items = [str(key).strip() for key, value in focus.items() if value]
         elif isinstance(focus, (list, tuple, set)):
             focus_items = [str(item).strip() for item in focus]
         else:

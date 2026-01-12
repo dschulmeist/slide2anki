@@ -69,9 +69,7 @@ async def update_card(
         raise HTTPException(status_code=404, detail="Card not found")
 
     update_data = updates.model_dump(exclude_unset=True)
-    should_version = any(
-        key in update_data for key in ("front", "back", "tags")
-    )
+    should_version = any(key in update_data for key in ("front", "back", "tags"))
     for key, value in update_data.items():
         setattr(card, key, value)
 

@@ -3,8 +3,9 @@
 import logging
 import os
 import sys
+from collections.abc import Callable
 from functools import wraps
-from typing import Any, Callable, TypeVar
+from typing import Any, TypeVar
 
 # Configure root logger for the package
 _LOG_LEVEL = os.environ.get("SLIDE2ANKI_LOG_LEVEL", "INFO").upper()

@@ -29,7 +29,13 @@ def _wrap_google_error(e: Exception) -> Exception:
     # Check for rate limit / quota errors
     if any(
         indicator in error_str
-        for indicator in ["resource exhausted", "quota", "rate limit", "429", "too many requests"]
+        for indicator in [
+            "resource exhausted",
+            "quota",
+            "rate limit",
+            "429",
+            "too many requests",
+        ]
     ) or error_type in ("ResourceExhausted", "TooManyRequests"):
         return RateLimitError(f"Google API rate limit: {e}")
 
@@ -37,10 +43,15 @@ def _wrap_google_error(e: Exception) -> Exception:
     if any(
         indicator in error_str
         for indicator in ["503", "500", "internal", "unavailable", "deadline"]
-    ) or error_type in ("ServiceUnavailable", "InternalServerError", "DeadlineExceeded"):
+    ) or error_type in (
+        "ServiceUnavailable",
+        "InternalServerError",
+        "DeadlineExceeded",
+    ):
         return ConnectionError(f"Google API server error: {e}")
 
     return e
+
 
 # Default timeout for API calls (seconds)
 DEFAULT_TIMEOUT = 120.0
@@ -173,7 +184,9 @@ class GoogleAdapter(BaseModelAdapter):
                     return ""
                 # Extract text from parts
                 text_parts = [
-                    part.text for part in candidate.content.parts if hasattr(part, "text")
+                    part.text
+                    for part in candidate.content.parts
+                    if hasattr(part, "text")
                 ]
                 return "".join(text_parts)
             except Exception as e:

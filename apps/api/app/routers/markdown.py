@@ -23,12 +23,16 @@ router = APIRouter()
 async def _build_project_markdown(db: AsyncSession, project_id: UUID) -> str:
     """Build full markdown content for a project from stored blocks."""
     chapters = (
-        await db.execute(
-            select(models.Chapter)
-            .where(models.Chapter.project_id == project_id)
-            .order_by(models.Chapter.position_index)
+        (
+            await db.execute(
+                select(models.Chapter)
+                .where(models.Chapter.project_id == project_id)
+                .order_by(models.Chapter.position_index)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     lines: list[str] = []
     for chapter in chapters:
@@ -36,12 +40,16 @@ async def _build_project_markdown(db: AsyncSession, project_id: UUID) -> str:
         lines.append("")
 
         blocks = (
-            await db.execute(
-                select(models.MarkdownBlock)
-                .where(models.MarkdownBlock.chapter_id == chapter.id)
-                .order_by(models.MarkdownBlock.position_index)
+            (
+                await db.execute(
+                    select(models.MarkdownBlock)
+                    .where(models.MarkdownBlock.chapter_id == chapter.id)
+                    .order_by(models.MarkdownBlock.position_index)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
         for block in blocks:
             lines.append(f"<!-- block:{block.anchor_id} -->")

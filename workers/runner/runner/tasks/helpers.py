@@ -4,21 +4,22 @@ from __future__ import annotations
 
 import json
 import sys
+from collections.abc import Generator
 from contextlib import contextmanager
 from datetime import datetime
 from io import BytesIO
 from pathlib import Path
-from typing import Any, Generator, Optional
+from typing import Any
 
 from minio import Minio
 from minio.error import S3Error
 from redis import Redis
-from sqlalchemy.orm import Session
-
-from runner.config import settings
 from slide2anki_core.model_adapters.google import GoogleAdapter
 from slide2anki_core.model_adapters.ollama import OllamaAdapter
 from slide2anki_core.model_adapters.openai import OpenAIAdapter
+from sqlalchemy.orm import Session
+
+from runner.config import settings
 
 QUEUE_PROGRESS_PREFIX = "slide2anki:progress"
 
@@ -181,9 +182,9 @@ def record_job_event(
     *,
     level: str,
     message: str,
-    step: Optional[str],
-    progress: Optional[int],
-    details: Optional[dict] = None,
+    step: str | None,
+    progress: int | None,
+    details: dict | None = None,
 ) -> None:
     """Persist an append-only event entry for a job.
 
@@ -207,11 +208,11 @@ def update_job_progress(
     job: Any,
     progress: int,
     step: str,
-    status: Optional[str] = None,
+    status: str | None = None,
     *,
-    event_message: Optional[str] = None,
+    event_message: str | None = None,
     event_level: str = "info",
-    event_details: Optional[dict] = None,
+    event_details: dict | None = None,
 ) -> None:
     """Persist job progress to the database and publish updates."""
     models = get_models()
@@ -248,8 +249,8 @@ def get_checkpointer() -> Generator[Any, None, None]:
     global _checkpointer_connection
 
     try:
-        from langgraph.checkpoint.postgres import PostgresSaver
         import psycopg
+        from langgraph.checkpoint.postgres import PostgresSaver
 
         # Create connection if not already established
         if _checkpointer_connection is None:

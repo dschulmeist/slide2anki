@@ -8,14 +8,19 @@ from typing import Any
 from uuid import UUID
 
 import structlog
+from slide2anki_core.exporters.apkg import export_apkg
+from slide2anki_core.exporters.tsv import export_tsv
+from slide2anki_core.schemas.cards import CardDraft, CardStatus
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from runner.config import settings
-from runner.tasks.helpers import ensure_bucket, get_minio_client, get_models, upload_bytes
-from slide2anki_core.exporters.apkg import export_apkg
-from slide2anki_core.exporters.tsv import export_tsv
-from slide2anki_core.schemas.cards import CardDraft, CardStatus
+from runner.tasks.helpers import (
+    ensure_bucket,
+    get_minio_client,
+    get_models,
+    upload_bytes,
+)
 
 logger = structlog.get_logger()
 

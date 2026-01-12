@@ -2,13 +2,14 @@
 
 import asyncio
 import json
-from typing import Any, AsyncGenerator, Literal, Optional, TypedDict
+from collections.abc import AsyncGenerator
+from typing import Any, Literal, TypedDict
 
 import redis.asyncio as redis
 
 from app.settings import settings
 
-_redis: Optional[redis.Redis] = None
+_redis: redis.Redis | None = None
 
 QUEUE_NAME = "slide2anki:jobs"
 
@@ -19,8 +20,8 @@ class TaskPayload(TypedDict):
     """Serialized task payload for the worker queue."""
 
     kind: TaskKind
-    job_id: Optional[str]
-    export_id: Optional[str]
+    job_id: str | None
+    export_id: str | None
 
 
 async def get_redis() -> redis.Redis:
@@ -53,7 +54,7 @@ async def enqueue_export_job(export_id: str) -> None:
     await client.rpush(QUEUE_NAME, json.dumps(payload))
 
 
-async def dequeue_task() -> Optional[TaskPayload]:
+async def dequeue_task() -> TaskPayload | None:
     """Get the next task from the queue (blocking)."""
     client = await get_redis()
     result = await client.blpop(QUEUE_NAME, timeout=5)

@@ -103,13 +103,17 @@ async def generate_decks(
         raise HTTPException(status_code=404, detail="Project not found")
 
     chapters = (
-        await db.execute(
-            select(models.Chapter).where(
-                models.Chapter.project_id == project_id,
-                models.Chapter.id.in_(payload.chapter_ids),
+        (
+            await db.execute(
+                select(models.Chapter).where(
+                    models.Chapter.project_id == project_id,
+                    models.Chapter.id.in_(payload.chapter_ids),
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     if len(chapters) != len(payload.chapter_ids):
         raise HTTPException(status_code=400, detail="Invalid chapter selection")

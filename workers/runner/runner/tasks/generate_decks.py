@@ -7,14 +7,14 @@ from typing import Any
 from uuid import UUID
 
 import structlog
+from slide2anki_core.graph import build_card_graph
+from slide2anki_core.schemas.cards import CardDraft
+from slide2anki_core.schemas.claims import Claim, ClaimKind, Evidence
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from runner.config import settings
 from runner.tasks.helpers import build_model_adapter, get_models, update_job_progress
-from slide2anki_core.graph import build_card_graph
-from slide2anki_core.schemas.cards import CardDraft
-from slide2anki_core.schemas.claims import Claim, ClaimKind, Evidence
 
 logger = structlog.get_logger()
 
@@ -93,9 +93,7 @@ def run_deck_generation(job_id: str) -> dict[str, Any]:
             chapter = None
             if deck.chapter_id:
                 chapter = db.execute(
-                    select(models.Chapter).where(
-                        models.Chapter.id == deck.chapter_id
-                    )
+                    select(models.Chapter).where(models.Chapter.id == deck.chapter_id)
                 ).scalar_one_or_none()
 
             config = None
@@ -106,7 +104,9 @@ def run_deck_generation(job_id: str) -> dict[str, Any]:
                     )
                 ).scalar_one_or_none()
 
-            update_job_progress(db, job, 10, "Preparing markdown blocks", status="running")
+            update_job_progress(
+                db, job, 10, "Preparing markdown blocks", status="running"
+            )
 
             blocks = []
             if chapter:
@@ -131,9 +131,9 @@ def run_deck_generation(job_id: str) -> dict[str, Any]:
                         "claims": claims,
                         "max_cards": config.max_cards if config else 0,
                         "focus": config.focus_json if config else None,
-                        "custom_instructions": config.custom_instructions
-                        if config
-                        else None,
+                        "custom_instructions": (
+                            config.custom_instructions if config else None
+                        ),
                     }
                 )
             )

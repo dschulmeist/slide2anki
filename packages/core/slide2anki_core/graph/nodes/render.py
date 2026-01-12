@@ -54,7 +54,10 @@ def _analyze_page_content(
                     img_height = abs(img.get("top", 0) - img.get("bottom", 0))
 
                     # Skip tiny images (likely icons, bullets, logos)
-                    if img_width < MIN_IMAGE_DIMENSION or img_height < MIN_IMAGE_DIMENSION:
+                    if (
+                        img_width < MIN_IMAGE_DIMENSION
+                        or img_height < MIN_IMAGE_DIMENSION
+                    ):
                         continue
 
                     meaningful_image_area += img_width * img_height
@@ -91,7 +94,9 @@ def _analyze_page_content(
     return results
 
 
-def _render_pdf_sync(pdf_data: bytes, dpi: int) -> tuple[list[Any], list[tuple[bool, str | None]]]:
+def _render_pdf_sync(
+    pdf_data: bytes, dpi: int
+) -> tuple[list[Any], list[tuple[bool, str | None]]]:
     """Synchronous PDF rendering - runs in thread pool to avoid blocking.
 
     Args:

@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from slide2anki_core.exporters.apkg import export_apkg, _generate_id
+from slide2anki_core.exporters.apkg import _generate_id, export_apkg
 from slide2anki_core.exporters.tsv import export_tsv
 from slide2anki_core.schemas.cards import CardDraft, CardFlag, CardStatus
 from slide2anki_core.schemas.claims import BoundingBox, Evidence
@@ -81,7 +81,7 @@ class TestTSVExport:
             output_path = Path(f.name)
 
         try:
-            result = export_tsv(sample_cards, output=output_path)
+            export_tsv(sample_cards, output=output_path)
             assert output_path.exists()
 
             content = output_path.read_text()
@@ -152,7 +152,9 @@ class TestAPKGExport:
         finally:
             output_path.unlink()
 
-    def test_export_with_evidence_no_images(self, sample_cards: list[CardDraft]) -> None:
+    def test_export_with_evidence_no_images(
+        self, sample_cards: list[CardDraft]
+    ) -> None:
         """Test export with evidence enabled but no slide images."""
         with tempfile.NamedTemporaryFile(suffix=".apkg", delete=False) as f:
             output_path = Path(f.name)
@@ -180,10 +182,10 @@ class TestAPKGWithImages:
         """Create a minimal valid PNG image."""
         # Minimal 1x1 white PNG
         return (
-            b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01'
-            b'\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde\x00'
-            b'\x00\x00\x0cIDATx\x9cc\xf8\xff\xff?\x00\x05\xfe\x02'
-            b'\xfe\xdc\xccY\xe7\x00\x00\x00\x00IEND\xaeB`\x82'
+            b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01"
+            b"\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde\x00"
+            b"\x00\x00\x0cIDATx\x9cc\xf8\xff\xff?\x00\x05\xfe\x02"
+            b"\xfe\xdc\xccY\xe7\x00\x00\x00\x00IEND\xaeB`\x82"
         )
 
     def test_export_with_embedded_images(

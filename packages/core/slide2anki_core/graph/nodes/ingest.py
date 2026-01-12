@@ -65,7 +65,9 @@ def ingest_node(state: dict[str, Any]) -> dict[str, Any]:
     try:
         validate_pdf(pdf_data)
         pdf_info = get_pdf_info(pdf_data)
-        logger.info(f"PDF validated: version={pdf_info.get('version')}, size={pdf_info.get('size_bytes')} bytes")
+        logger.info(
+            f"PDF validated: version={pdf_info.get('version')}, size={pdf_info.get('size_bytes')} bytes"
+        )
     except PDFValidationError as e:
         error_msg = f"Invalid PDF: {e}"
         logger.error(error_msg)

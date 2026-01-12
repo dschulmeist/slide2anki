@@ -1,7 +1,6 @@
 """Pydantic schemas for API request and response models."""
 
 from datetime import datetime
-from typing import Optional
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
@@ -88,7 +87,7 @@ class MarkdownVersionResponse(BaseModel):
     version: int
     content: str
     created_at: datetime
-    created_by: Optional[str] = None
+    created_by: str | None = None
 
 
 class MarkdownBlockResponse(BaseModel):
@@ -102,7 +101,7 @@ class MarkdownBlockResponse(BaseModel):
     anchor_id: str
     kind: str
     content: str
-    evidence_json: Optional[list] = None
+    evidence_json: list | None = None
     position_index: int
 
 
@@ -119,7 +118,7 @@ class DeckResponse(BaseModel):
 
     id: UUID
     project_id: UUID
-    chapter_id: Optional[UUID] = None
+    chapter_id: UUID | None = None
     name: str
     status: str
     created_at: datetime
@@ -138,16 +137,16 @@ class DeckGenerationRequest(BaseModel):
 
     chapter_ids: list[UUID]
     max_cards: int = 0
-    focus: Optional[dict] = None
-    custom_instructions: Optional[str] = None
+    focus: dict | None = None
+    custom_instructions: str | None = None
 
 
 class JobCreate(BaseModel):
     """Payload for creating a job."""
 
     project_id: UUID
-    document_id: Optional[UUID] = None
-    deck_id: Optional[UUID] = None
+    document_id: UUID | None = None
+    deck_id: UUID | None = None
     job_type: str = "markdown_build"
 
 
@@ -158,15 +157,15 @@ class JobResponse(BaseModel):
 
     id: UUID
     project_id: UUID
-    document_id: Optional[UUID] = None
-    deck_id: Optional[UUID] = None
+    document_id: UUID | None = None
+    deck_id: UUID | None = None
     job_type: str
     status: str
     progress: int
-    current_step: Optional[str] = None
-    error_message: Optional[str] = None
+    current_step: str | None = None
+    error_message: str | None = None
     created_at: datetime
-    finished_at: Optional[datetime] = None
+    finished_at: datetime | None = None
 
 
 class JobListResponse(BaseModel):
@@ -182,23 +181,23 @@ class CardDraftResponse(BaseModel):
 
     id: UUID
     deck_id: UUID
-    anchor_id: Optional[str] = None
+    anchor_id: str | None = None
     front: str
     back: str
     tags: list[str] = []
     confidence: float
-    flags_json: Optional[list] = None
-    evidence_json: Optional[list] = None
+    flags_json: list | None = None
+    evidence_json: list | None = None
     status: str
 
 
 class CardDraftUpdate(BaseModel):
     """Update payload for card drafts."""
 
-    front: Optional[str] = None
-    back: Optional[str] = None
-    tags: Optional[list[str]] = None
-    status: Optional[str] = None
+    front: str | None = None
+    back: str | None = None
+    tags: list[str] | None = None
+    status: str | None = None
 
 
 class CardDraftListResponse(BaseModel):
@@ -218,7 +217,7 @@ class CardRevisionResponse(BaseModel):
     front: str
     back: str
     tags: list[str] = []
-    edited_by: Optional[str] = None
+    edited_by: str | None = None
 
 
 class JobEventResponse(BaseModel):
@@ -230,9 +229,9 @@ class JobEventResponse(BaseModel):
     job_id: UUID
     level: str
     message: str
-    step: Optional[str] = None
-    progress: Optional[int] = None
-    details_json: Optional[dict] = None
+    step: str | None = None
+    progress: int | None = None
+    details_json: dict | None = None
     created_at: datetime
 
 
@@ -249,7 +248,7 @@ class AppSettingsResponse(BaseModel):
 
     provider: str
     model: str
-    base_url: Optional[str] = None
+    base_url: str | None = None
     api_key_present: bool = False
     updated_at: datetime
 
@@ -264,8 +263,8 @@ class AppSettingsUpdate(BaseModel):
 
     provider: str
     model: str
-    base_url: Optional[str] = None
-    api_key: Optional[str] = None
+    base_url: str | None = None
+    api_key: str | None = None
 
 
 class CardRevisionListResponse(BaseModel):
@@ -283,7 +282,7 @@ class SlideResponse(BaseModel):
     document_id: UUID
     page_index: int
     image_object_key: str
-    image_url: Optional[str] = None
+    image_url: str | None = None
 
 
 class SlideListResponse(BaseModel):

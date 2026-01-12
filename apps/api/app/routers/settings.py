@@ -61,4 +61,3 @@ async def update_settings(
     await db.commit()
     await db.refresh(settings_row)
     return AppSettingsResponse.model_validate(settings_row)
-

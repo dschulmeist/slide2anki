@@ -1,6 +1,17 @@
 import { render, screen } from '@testing-library/react';
 import Home from '@/app/page';
 
+// Mock next/navigation for App Router
+jest.mock('next/navigation', () => ({
+  useRouter: () => ({
+    push: jest.fn(),
+    replace: jest.fn(),
+    prefetch: jest.fn(),
+  }),
+  usePathname: () => '/',
+  useSearchParams: () => new URLSearchParams(),
+}));
+
 // Mock react-dropzone
 jest.mock('react-dropzone', () => ({
   useDropzone: () => ({
@@ -21,7 +32,7 @@ describe('Home', () => {
   it('renders the upload zone', () => {
     render(<Home />);
     expect(
-      screen.getByText(/Drag and drop a PDF here/i)
+      screen.getByText(/Drag and drop PDFs here/i)
     ).toBeInTheDocument();
   });
 

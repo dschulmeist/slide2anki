@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, JSON, String, Text
+from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -112,7 +112,7 @@ class MarkdownVersion(Base):
     version: Mapped[int] = mapped_column(Integer, default=1)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    created_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    created_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     project: Mapped["Project"] = relationship(back_populates="markdown_versions")
 
@@ -134,7 +134,7 @@ class MarkdownBlock(Base):
     anchor_id: Mapped[str] = mapped_column(String(255), nullable=False)
     kind: Mapped[str] = mapped_column(String(50), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
-    evidence_json: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    evidence_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
     position_index: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(
@@ -156,14 +156,14 @@ class GenerationConfig(Base):
     project_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("projects.id"), nullable=False
     )
-    chapter_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+    chapter_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("chapters.id"), nullable=True
     )
     max_cards: Mapped[int] = mapped_column(Integer, default=0)
-    focus_json: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
-    custom_instructions: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    model_provider: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    model_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    focus_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    custom_instructions: Mapped[str | None] = mapped_column(Text, nullable=True)
+    model_provider: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    model_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     project: Mapped["Project"] = relationship(back_populates="generation_configs")
@@ -180,10 +180,10 @@ class Deck(Base):
     project_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("projects.id"), nullable=False
     )
-    chapter_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+    chapter_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("chapters.id"), nullable=True
     )
-    generation_config_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+    generation_config_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("generation_configs.id"), nullable=True
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -234,20 +234,20 @@ class Job(Base):
     project_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("projects.id"), nullable=False
     )
-    document_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+    document_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("documents.id"), nullable=True
     )
-    deck_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+    deck_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("decks.id"), nullable=True
     )
     job_type: Mapped[str] = mapped_column(String(50), default="markdown_build")
     status: Mapped[str] = mapped_column(String(50), default="pending")
     progress: Mapped[int] = mapped_column(Integer, default=0)
-    current_step: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    logs_object_key: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    current_step: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    logs_object_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     project: Mapped["Project"] = relationship()
     document: Mapped[Optional["Document"]] = relationship(back_populates="jobs")
@@ -274,9 +274,9 @@ class JobEvent(Base):
     )
     level: Mapped[str] = mapped_column(String(25), default="info")
     message: Mapped[str] = mapped_column(Text, nullable=False)
-    step: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    progress: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    details_json: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    step: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    progress: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    details_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     job: Mapped["Job"] = relationship(back_populates="events")
@@ -296,8 +296,8 @@ class AppSetting(Base):
     )
     provider: Mapped[str] = mapped_column(String(50), default="ollama")
     model: Mapped[str] = mapped_column(String(255), default="")
-    base_url: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
-    api_key: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    base_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    api_key: Mapped[str | None] = mapped_column(Text, nullable=True)
     api_key_present: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(
@@ -319,7 +319,7 @@ class Claim(Base):
     kind: Mapped[str] = mapped_column(String(50), nullable=False)
     statement: Mapped[str] = mapped_column(Text, nullable=False)
     confidence: Mapped[float] = mapped_column(Float, default=1.0)
-    evidence_json: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    evidence_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     slide: Mapped["Slide"] = relationship(back_populates="claims")
 
@@ -335,13 +335,13 @@ class CardDraft(Base):
     deck_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("decks.id"), nullable=False
     )
-    anchor_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    anchor_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     front: Mapped[str] = mapped_column(Text, nullable=False)
     back: Mapped[str] = mapped_column(Text, nullable=False)
-    tags: Mapped[Optional[list]] = mapped_column(JSON, default=list)
+    tags: Mapped[list | None] = mapped_column(JSON, default=list)
     confidence: Mapped[float] = mapped_column(Float, default=1.0)
-    flags_json: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
-    evidence_json: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    flags_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    evidence_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
     status: Mapped[str] = mapped_column(String(50), default="pending")
 
     deck: Mapped["Deck"] = relationship(back_populates="cards")
@@ -364,8 +364,8 @@ class CardRevision(Base):
     revision_number: Mapped[int] = mapped_column(Integer, default=1)
     front: Mapped[str] = mapped_column(Text, nullable=False)
     back: Mapped[str] = mapped_column(Text, nullable=False)
-    tags: Mapped[Optional[list]] = mapped_column(JSON, default=list)
-    edited_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    tags: Mapped[list | None] = mapped_column(JSON, default=list)
+    edited_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     card: Mapped["CardDraft"] = relationship(back_populates="revisions")

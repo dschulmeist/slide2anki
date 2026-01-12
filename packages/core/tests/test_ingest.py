@@ -3,8 +3,6 @@
 import tempfile
 from pathlib import Path
 
-import pytest
-
 from slide2anki_core.graph.nodes.ingest import ingest_node
 
 

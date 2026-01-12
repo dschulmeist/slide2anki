@@ -1,7 +1,6 @@
 """Job management routes."""
 
 import json
-from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -25,9 +24,9 @@ router = APIRouter()
 
 @router.get("/jobs", response_model=JobListResponse)
 async def list_jobs(
-    project_id: Optional[UUID] = None,
-    deck_id: Optional[UUID] = None,
-    document_id: Optional[UUID] = None,
+    project_id: UUID | None = None,
+    deck_id: UUID | None = None,
+    document_id: UUID | None = None,
     db: AsyncSession = Depends(get_db),
 ) -> JobListResponse:
     """List jobs, optionally filtered by project, deck, or document."""

@@ -1,7 +1,6 @@
 """Progress tracking helpers for jobs."""
 
 from datetime import datetime
-from typing import Optional
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,7 +14,7 @@ async def update_job_progress(
     job_id: str,
     progress: int,
     step: str,
-    status: Optional[str] = None,
+    status: str | None = None,
 ) -> None:
     """Update job progress in database and publish to Redis."""
     from uuid import UUID

@@ -47,7 +47,11 @@ def _parse_json_response(content: str) -> dict[str, Any] | list[dict[str, Any]]:
             pass
 
     # Last resort: find any JSON object or array
-    match = re.search(r"(\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}|\[[^\[\]]*(?:\[[^\[\]]*\][^\[\]]*)*\])", content, re.DOTALL)
+    match = re.search(
+        r"(\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}|\[[^\[\]]*(?:\[[^\[\]]*\][^\[\]]*)*\])",
+        content,
+        re.DOTALL,
+    )
     if match:
         try:
             return json.loads(match.group(1))
@@ -153,10 +157,14 @@ class OllamaAdapter(BaseModelAdapter):
         """Extract claims from a slide image using vision model."""
         # Encode image as base64
         image_b64 = base64.b64encode(image_data).decode("utf-8")
-        logger.info(f"Extracting claims from image ({len(image_data)} bytes) via Ollama")
+        logger.info(
+            f"Extracting claims from image ({len(image_data)} bytes) via Ollama"
+        )
 
         # Add JSON instruction to prompt
-        full_prompt = f"{prompt}\n\nRespond with a valid JSON array only. No additional text."
+        full_prompt = (
+            f"{prompt}\n\nRespond with a valid JSON array only. No additional text."
+        )
 
         response = await self._generate(
             model=self.vision_model,
@@ -215,7 +223,9 @@ class OllamaAdapter(BaseModelAdapter):
     ) -> list[dict[str, Any]]:
         """Generate flashcard drafts from claims."""
         logger.info(f"Generating cards from {len(claims)} claims via Ollama")
-        full_prompt = f"{prompt}\n\nRespond with a valid JSON array only. No additional text."
+        full_prompt = (
+            f"{prompt}\n\nRespond with a valid JSON array only. No additional text."
+        )
 
         response = await self._generate(
             model=self.text_model,
@@ -240,7 +250,9 @@ class OllamaAdapter(BaseModelAdapter):
     ) -> list[dict[str, Any]]:
         """Critique flashcard drafts."""
         logger.info(f"Critiquing {len(cards)} cards via Ollama")
-        full_prompt = f"{prompt}\n\nRespond with a valid JSON array only. No additional text."
+        full_prompt = (
+            f"{prompt}\n\nRespond with a valid JSON array only. No additional text."
+        )
 
         response = await self._generate(
             model=self.text_model,
