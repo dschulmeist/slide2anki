@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import json
 import sys
+from contextlib import contextmanager
 from datetime import datetime
 from io import BytesIO
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Generator, Optional
 
 from minio import Minio
 from minio.error import S3Error
@@ -20,6 +21,9 @@ from slide2anki_core.model_adapters.ollama import OllamaAdapter
 from slide2anki_core.model_adapters.openai import OpenAIAdapter
 
 QUEUE_PROGRESS_PREFIX = "slide2anki:progress"
+
+# Global checkpointer connection (reused across jobs for efficiency)
+_checkpointer_connection: Any = None
 
 
 def ensure_api_on_path() -> None:
@@ -229,3 +233,72 @@ def update_job_progress(
     )
     db.commit()
     publish_progress(str(job.id), progress, step)
+
+
+@contextmanager
+def get_checkpointer() -> Generator[Any, None, None]:
+    """Create a PostgreSQL checkpointer for LangGraph state persistence.
+
+    Uses the langgraph-checkpoint-postgres package to persist graph state,
+    allowing jobs to be resumed from their last checkpoint after failures.
+
+    Yields:
+        PostgresSaver instance configured with the database connection
+    """
+    global _checkpointer_connection
+
+    try:
+        from langgraph.checkpoint.postgres import PostgresSaver
+        import psycopg
+
+        # Create connection if not already established
+        if _checkpointer_connection is None:
+            # Convert SQLAlchemy URL to psycopg format
+            db_url = settings.database_url
+            if db_url.startswith("postgresql://"):
+                db_url = db_url.replace("postgresql://", "postgresql+psycopg://", 1)
+            elif db_url.startswith("postgres://"):
+                db_url = db_url.replace("postgres://", "postgresql+psycopg://", 1)
+
+            # Extract connection params from URL
+            # psycopg expects a connection string without the driver prefix
+            conn_str = settings.database_url
+            _checkpointer_connection = psycopg.connect(conn_str)
+
+        checkpointer = PostgresSaver(_checkpointer_connection)
+        # Ensure checkpoint tables exist
+        checkpointer.setup()
+        yield checkpointer
+
+    except ImportError as e:
+        # Fallback to no checkpointing if package not installed
+        import structlog
+
+        logger = structlog.get_logger()
+        logger.warning(
+            "langgraph-checkpoint-postgres not available, checkpointing disabled",
+            error=str(e),
+        )
+        yield None
+    except Exception as e:
+        import structlog
+
+        logger = structlog.get_logger()
+        logger.warning("Failed to create checkpointer", error=str(e))
+        yield None
+
+
+def get_checkpoint_config(job_id: str) -> dict[str, Any]:
+    """Create the LangGraph config dict for a job's checkpoint.
+
+    Args:
+        job_id: The job ID to use as thread_id
+
+    Returns:
+        Config dict with thread_id set for checkpointing
+    """
+    return {
+        "configurable": {
+            "thread_id": job_id,
+        }
+    }

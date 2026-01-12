@@ -17,6 +17,8 @@ from runner.tasks.helpers import (
     build_model_adapter,
     download_bytes,
     ensure_bucket,
+    get_checkpoint_config,
+    get_checkpointer,
     get_minio_client,
     get_models,
     update_job_progress,
@@ -203,15 +205,21 @@ def run_markdown_build(job_id: str) -> dict[str, Any]:
 
             update_job_progress(db, job, 15, "Running markdown pipeline")
             adapter = build_model_adapter(db, models)
-            graph = build_markdown_graph(adapter)
-            result = asyncio.run(
-                graph.ainvoke(
-                    {
-                        "pdf_data": pdf_data,
-                        "deck_name": _normalize_title(document.filename),
-                    }
+
+            # Use checkpointer for resumable jobs
+            with get_checkpointer() as checkpointer:
+                graph = build_markdown_graph(adapter, checkpointer=checkpointer)
+                checkpoint_config = get_checkpoint_config(job_id)
+
+                result = asyncio.run(
+                    graph.ainvoke(
+                        {
+                            "pdf_data": pdf_data,
+                            "deck_name": _normalize_title(document.filename),
+                        },
+                        config=checkpoint_config,
+                    )
                 )
-            )
 
             errors = [str(error) for error in result.get("errors", []) if error]
             if errors:

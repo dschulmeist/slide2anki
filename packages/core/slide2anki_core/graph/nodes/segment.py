@@ -68,6 +68,21 @@ def create_segment_node(
                 "current_step": "segment",
             }
 
+        # For text-only slides, skip vision segmentation and use a single region
+        if slide.is_text_only and slide.extracted_text:
+            return {
+                **state,
+                "regions": [
+                    SlideRegion(
+                        kind=RegionKind.BULLETS,
+                        bbox=BoundingBox(x=0.0, y=0.0, width=1.0, height=1.0),
+                        confidence=1.0,
+                        text_snippet=slide.extracted_text[:200],
+                    )
+                ],
+                "current_step": "segment",
+            }
+
         data = await adapter.generate_structured(
             prompt=SEGMENT_PROMPT,
             image_data=slide.image_data,

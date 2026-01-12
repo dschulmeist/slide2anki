@@ -159,6 +159,51 @@ async def stream_job_progress(
     )
 
 
+@router.post("/jobs/{job_id}/retry", response_model=JobResponse)
+async def retry_job(
+    job_id: UUID,
+    db: AsyncSession = Depends(get_db),
+) -> JobResponse:
+    """Retry a failed or cancelled job.
+
+    If the job has checkpoint data from a previous run, it will resume
+    from the last successful checkpoint rather than starting over.
+    """
+    result = await db.execute(select(models.Job).where(models.Job.id == job_id))
+    job = result.scalar_one_or_none()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    if job.status not in ("failed", "cancelled"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Only failed or cancelled jobs can be retried (current: {job.status})",
+        )
+
+    # Reset job state for retry
+    job.status = "pending"
+    job.progress = 0
+    job.current_step = "queued"
+    job.error_message = None
+    job.finished_at = None
+
+    db.add(
+        models.JobEvent(
+            job_id=job.id,
+            level="info",
+            message="Job queued for retry (will resume from checkpoint if available)",
+            step=job.current_step,
+            progress=job.progress,
+        )
+    )
+    await db.commit()
+    await db.refresh(job)
+
+    await enqueue_job(str(job.id))
+
+    return JobResponse.model_validate(job)
+
+
 @router.get("/jobs/{job_id}/events", response_model=JobEventListResponse)
 async def list_job_events(
     job_id: UUID,

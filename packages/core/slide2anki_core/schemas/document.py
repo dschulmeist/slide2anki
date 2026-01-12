@@ -13,6 +13,12 @@ class Slide(BaseModel):
     image_data: bytes | None = Field(None, description="Raw image bytes")
     width: int = Field(0, description="Image width in pixels")
     height: int = Field(0, description="Image height in pixels")
+    is_text_only: bool = Field(
+        False, description="True if page has no meaningful images/diagrams"
+    )
+    extracted_text: str | None = Field(
+        None, description="Text extracted directly from PDF for text-only pages"
+    )
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
 

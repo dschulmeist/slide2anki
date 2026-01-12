@@ -23,6 +23,7 @@ export default function JobDetailPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isCancelling, setIsCancelling] = useState(false);
+  const [isRetrying, setIsRetrying] = useState(false);
   const streamRef = useRef<EventSource | null>(null);
 
   /**
@@ -194,6 +195,33 @@ export default function JobDetailPage() {
   }, [job, jobId, loadJob]);
 
   /**
+   * Retry a failed or cancelled job. Resumes from checkpoint if available.
+   */
+  const handleRetry = useCallback(async () => {
+    if (!jobId || !job) {
+      return;
+    }
+
+    if (job.status !== 'failed' && job.status !== 'cancelled') {
+      return;
+    }
+
+    setIsRetrying(true);
+    setErrorMessage(null);
+
+    try {
+      await api.retryJob(jobId);
+      await loadJob();
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Failed to retry job';
+      setErrorMessage(message);
+    } finally {
+      setIsRetrying(false);
+    }
+  }, [job, jobId, loadJob]);
+
+  /**
    * Choose the UI icon that matches the current job status.
    */
   const statusIcon = useMemo(() => {
@@ -233,6 +261,7 @@ export default function JobDetailPage() {
   }, [job?.status]);
 
   const canCancel = job && (job.status === 'pending' || job.status === 'running');
+  const canRetry = job && (job.status === 'failed' || job.status === 'cancelled');
 
   return (
     <div className="container mx-auto px-4 py-8 max-w-3xl">
@@ -348,14 +377,26 @@ export default function JobDetailPage() {
               </div>
 
               <div className="flex flex-wrap gap-3">
-                <button
-                  type="button"
-                  disabled={isCancelling || !canCancel}
-                  onClick={handleCancel}
-                  className="px-4 py-2 text-sm font-semibold text-white bg-red-600 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-red-700 transition-colors"
-                >
-                  {isCancelling ? 'Cancelling…' : 'Cancel job'}
-                </button>
+                {canCancel && (
+                  <button
+                    type="button"
+                    disabled={isCancelling}
+                    onClick={handleCancel}
+                    className="px-4 py-2 text-sm font-semibold text-white bg-red-600 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-red-700 transition-colors"
+                  >
+                    {isCancelling ? 'Cancelling…' : 'Cancel job'}
+                  </button>
+                )}
+                {canRetry && (
+                  <button
+                    type="button"
+                    disabled={isRetrying}
+                    onClick={handleRetry}
+                    className="px-4 py-2 text-sm font-semibold text-white bg-primary-600 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-primary-700 transition-colors"
+                  >
+                    {isRetrying ? 'Retrying…' : 'Retry job'}
+                  </button>
+                )}
                 {job.deck_id && job.status === 'completed' && (
                   <Link
                     href={`/review?deckId=${job.deck_id}`}

@@ -44,6 +44,36 @@ Formula rules:
 - if kind is "formula", the statement should be LaTeX only (no surrounding $)
 """
 
+EXTRACT_TEXT_PROMPT = """Analyze this slide text and extract atomic claims.
+
+The slide text is:
+---
+{text}
+---
+
+For each claim, identify:
+1. Type: definition, fact, process, relationship, example, formula, or other
+2. Statement: A clear, self-contained statement of the claim
+3. Confidence: How confident you are (0.0-1.0)
+
+Output format (JSON object with a "claims" array):
+{{
+  "claims": [
+    {{
+      "kind": "definition",
+      "statement": "Mitochondria produce ATP through cellular respiration.",
+      "confidence": 0.95,
+      "evidence": {{
+        "text_snippet": "Mitochondria produce ATP"
+      }}
+    }}
+  ]
+}}
+
+Formula rules:
+- if kind is "formula", the statement should be LaTeX only (no surrounding $)
+"""
+
 
 def _convert_bbox_to_slide(
     region_bbox: BoundingBox,
@@ -81,29 +111,47 @@ def create_extract_region_node(
         """
         slide: Slide | None = state.get("slide")
         region: SlideRegion | None = state.get("region")
-        if not slide or not slide.image_data or not region:
+        if not slide or not region:
             return {
                 **state,
                 "claims": [],
                 "current_step": "extract_region",
             }
 
-        # Try to crop the region, fall back to full slide if cropping fails
-        image_data = slide.image_data
-        evidence = Evidence(slide_index=slide.page_index, bbox=region.bbox)
-        try:
-            region_image = crop_evidence(slide.image_data, evidence, padding=0)
-            if region_image:
-                image_data = region_image
-        except CropError as e:
-            logger.warning(f"Failed to crop region, using full slide: {e}")
+        # For text-only slides, use text model instead of vision
+        if slide.is_text_only and slide.extracted_text:
+            logger.info(
+                f"Extracting claims from text-only slide {slide.page_index} "
+                f"({len(slide.extracted_text)} chars)"
+            )
+            prompt = EXTRACT_TEXT_PROMPT.format(text=slide.extracted_text)
+            response = await adapter.generate_structured(prompt=prompt)
+            if isinstance(response, dict):
+                response = response.get("claims", [])
+        else:
+            if not slide.image_data:
+                return {
+                    **state,
+                    "claims": [],
+                    "current_step": "extract_region",
+                }
 
-        logger.info(f"Extracting claims from region ({region.kind.value})")
+            # Try to crop the region, fall back to full slide if cropping fails
+            image_data = slide.image_data
+            evidence = Evidence(slide_index=slide.page_index, bbox=region.bbox)
+            try:
+                region_image = crop_evidence(slide.image_data, evidence, padding=0)
+                if region_image:
+                    image_data = region_image
+            except CropError as e:
+                logger.warning(f"Failed to crop region, using full slide: {e}")
 
-        response = await adapter.extract_claims(
-            image_data=image_data,
-            prompt=EXTRACT_REGION_PROMPT,
-        )
+            logger.info(f"Extracting claims from region ({region.kind.value})")
+
+            response = await adapter.extract_claims(
+                image_data=image_data,
+                prompt=EXTRACT_REGION_PROMPT,
+            )
 
         claims: list[Claim] = []
         for claim_data in response:
