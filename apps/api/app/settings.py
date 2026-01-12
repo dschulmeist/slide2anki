@@ -24,8 +24,9 @@ class Settings(BaseSettings):
     api_port: int = 8000
     debug: bool = True
 
-    # CORS
+    # CORS - accepts comma-separated origins or "*" for allow-all
     cors_origins: list[str] = ["http://localhost:3000"]
+    cors_allow_all: bool = False
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 

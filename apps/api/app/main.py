@@ -40,11 +40,11 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS middleware
+# CORS middleware - allow all origins in dev/Codespaces, restrict in production
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins,
-    allow_credentials=True,
+    allow_origins=["*"] if settings.cors_allow_all else settings.cors_origins,
+    allow_credentials=not settings.cors_allow_all,  # credentials require specific origins
     allow_methods=["*"],
     allow_headers=["*"],
 )

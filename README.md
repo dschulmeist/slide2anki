@@ -60,7 +60,20 @@ LATER WORK:
 - Python 3.11+
 - A model endpoint and API key (OpenAI or Ollama)
 
-### One command
+### One command (Docker full stack)
+
+```bash
+git clone https://github.com/yourusername/slide2anki.git
+cd slide2anki
+./infra/scripts/run_full_stack.sh --rebuild --logs
+```
+
+This runs everything in Docker (web, api, worker, Postgres, Redis, MinIO) with the `full` Compose profile.
+
+- Stop: `./infra/scripts/stop_full_stack.sh` (add `--prune` to drop volumes/data)
+- Logs: add `--logs` to the start command to stream logs in the same terminal, or run `docker compose -f infra/docker/docker-compose.yml --profile full logs -f`
+
+### One command (local dev helpers)
 
 ```bash
 git clone https://github.com/yourusername/slide2anki.git
@@ -68,10 +81,7 @@ cd slide2anki
 ./infra/scripts/dev.sh
 ```
 
-This starts:
-- Web UI at http://localhost:3000
-- API at http://localhost:8000
-- Postgres, Redis, and MinIO
+This starts Postgres, Redis, and MinIO in Docker. Run the API/worker/web locally per the guidance printed by the script, or pass `--docker` to also run API and worker in containers.
 
 ### Manual setup
 
@@ -103,11 +113,12 @@ Create a `.env` file in the root directory:
 OPENAI_API_KEY=sk-...
 OLLAMA_BASE_URL=http://localhost:11434
 
-POSTGRES_URL=postgresql://slide2anki:slide2anki@localhost:5432/slide2anki
+POSTGRES_URL=postgresql+asyncpg://slide2anki:slide2anki@localhost:5432/slide2anki
 REDIS_URL=redis://localhost:6379
 MINIO_ENDPOINT=localhost:9000
 MINIO_ACCESS_KEY=minioadmin
 MINIO_SECRET_KEY=minioadmin
+API_INTERNAL_URL=http://api:8000   # for Docker SSR; browser uses NEXT_PUBLIC_API_URL
 ```
 
 ## Using the prototype

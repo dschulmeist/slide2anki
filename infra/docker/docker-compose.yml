@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # PostgreSQL database
   postgres:
@@ -75,8 +73,9 @@ services:
       dockerfile: infra/docker/api.Dockerfile
     container_name: slide2anki-api
     environment:
-      DATABASE_URL: postgresql://slide2anki:slide2anki@postgres:5432/slide2anki
+      DATABASE_URL: postgresql+asyncpg://slide2anki:slide2anki@postgres:5432/slide2anki
       REDIS_URL: redis://redis:6379
+      CORS_ALLOW_ALL: "true"
       MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: minioadmin
       MINIO_SECRET_KEY: minioadmin
@@ -103,7 +102,7 @@ services:
       dockerfile: infra/docker/worker.Dockerfile
     container_name: slide2anki-worker
     environment:
-      DATABASE_URL: postgresql://slide2anki:slide2anki@postgres:5432/slide2anki
+      DATABASE_URL: postgresql+asyncpg://slide2anki:slide2anki@postgres:5432/slide2anki
       REDIS_URL: redis://redis:6379
       MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: minioadmin
@@ -129,8 +128,10 @@ services:
       dockerfile: infra/docker/web.Dockerfile
     container_name: slide2anki-web
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost:8000
-      NEXT_PUBLIC_MINIO_URL: http://localhost:9000
+      # For Codespaces: uses forwarded URL; for local Docker: falls back to localhost
+      NEXT_PUBLIC_API_URL: ${CODESPACE_NAME:+https://${CODESPACE_NAME}-8000.${GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN:-app.github.dev}}
+      API_INTERNAL_URL: http://api:8000
+      NEXT_PUBLIC_MINIO_URL: ${CODESPACE_NAME:+https://${CODESPACE_NAME}-9000.${GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN:-app.github.dev}}
     ports:
       - "3000:3000"
     volumes:
