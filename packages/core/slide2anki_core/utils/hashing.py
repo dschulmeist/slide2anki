@@ -1,10 +1,9 @@
 """Hashing utilities."""
 
 import hashlib
-from typing import Union
 
 
-def content_hash(content: Union[str, bytes]) -> str:
+def content_hash(content: str | bytes) -> str:
     """Generate a SHA-256 hash of content.
 
     Args:

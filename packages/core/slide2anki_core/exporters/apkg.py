@@ -1,9 +1,7 @@
 """APKG export for Anki decks."""
 
 import hashlib
-import random
 from pathlib import Path
-from typing import Optional, Union
 
 from slide2anki_core.schemas.cards import CardDraft, CardStatus
 
@@ -11,9 +9,9 @@ from slide2anki_core.schemas.cards import CardDraft, CardStatus
 def export_apkg(
     cards: list[CardDraft],
     deck_name: str,
-    output: Union[str, Path],
+    output: str | Path,
     only_approved: bool = False,
-    slide_images: Optional[dict[int, bytes]] = None,
+    slide_images: dict[int, bytes] | None = None,
 ) -> Path:
     """Export cards to APKG format (Anki deck package).
 

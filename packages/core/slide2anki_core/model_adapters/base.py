@@ -28,6 +28,23 @@ class BaseModelAdapter(ABC):
         pass
 
     @abstractmethod
+    async def generate_structured(
+        self,
+        prompt: str,
+        image_data: bytes | None = None,
+    ) -> dict[str, Any] | list[dict[str, Any]]:
+        """Generate structured JSON from a model call.
+
+        Args:
+            prompt: Prompt that specifies the JSON output format
+            image_data: Optional image bytes for vision calls
+
+        Returns:
+            Parsed JSON data (dict or list)
+        """
+        pass
+
+    @abstractmethod
     async def generate_cards(
         self,
         claims: list[Claim],

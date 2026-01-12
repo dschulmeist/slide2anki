@@ -1,6 +1,7 @@
 """Write cards node: Generate flashcard drafts from claims."""
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from slide2anki_core.model_adapters.base import BaseModelAdapter
 from slide2anki_core.schemas.cards import CardDraft

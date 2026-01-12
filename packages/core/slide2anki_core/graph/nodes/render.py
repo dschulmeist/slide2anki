@@ -1,7 +1,8 @@
 """Render node: Convert PDF pages to images."""
 
+from collections.abc import Callable
 from io import BytesIO
-from typing import Any, Callable
+from typing import Any
 
 from slide2anki_core.schemas.document import Document, Slide
 

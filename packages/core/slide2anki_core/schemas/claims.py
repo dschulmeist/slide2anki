@@ -1,7 +1,6 @@
 """Claim and evidence schemas."""
 
 from enum import Enum
-from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -18,12 +17,12 @@ class BoundingBox(BaseModel):
 class Evidence(BaseModel):
     """Evidence linking a claim to its source."""
 
-    document_id: Optional[str] = Field(
+    document_id: str | None = Field(
         None, description="Optional document identifier for multi-doc projects"
     )
     slide_index: int = Field(..., description="Which slide this evidence is from")
-    bbox: Optional[BoundingBox] = Field(None, description="Region on the slide")
-    text_snippet: Optional[str] = Field(None, description="Relevant text excerpt")
+    bbox: BoundingBox | None = Field(None, description="Region on the slide")
+    text_snippet: str | None = Field(None, description="Relevant text excerpt")
 
 
 class ClaimKind(str, Enum):

@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from slide2anki_core.schemas.claims import Claim, ClaimKind
 from slide2anki_core.schemas.document import Document

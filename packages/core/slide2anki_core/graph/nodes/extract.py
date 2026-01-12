@@ -1,6 +1,7 @@
 """Extract node: Identify claims from slides using vision model."""
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from slide2anki_core.model_adapters.base import BaseModelAdapter
 from slide2anki_core.schemas.claims import BoundingBox, Claim, ClaimKind, Evidence

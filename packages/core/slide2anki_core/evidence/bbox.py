@@ -1,7 +1,5 @@
 """Bounding box utilities."""
 
-from typing import Tuple
-
 from slide2anki_core.schemas.claims import BoundingBox
 
 
@@ -31,7 +29,7 @@ def normalize_bbox(
 
 def denormalize_bbox(
     bbox: BoundingBox, image_width: int, image_height: int
-) -> Tuple[int, int, int, int]:
+) -> tuple[int, int, int, int]:
     """Convert normalized coordinates to pixel coordinates.
 
     Args:

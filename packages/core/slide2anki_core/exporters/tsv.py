@@ -3,14 +3,13 @@
 import csv
 from io import StringIO
 from pathlib import Path
-from typing import Union
 
 from slide2anki_core.schemas.cards import CardDraft, CardStatus
 
 
 def export_tsv(
     cards: list[CardDraft],
-    output: Union[str, Path, None] = None,
+    output: str | Path | None = None,
     include_tags: bool = True,
     only_approved: bool = False,
 ) -> str:

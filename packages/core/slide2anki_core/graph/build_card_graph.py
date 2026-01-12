@@ -3,7 +3,9 @@
 from typing import TypedDict
 
 from langgraph.graph import END, StateGraph
+from langgraph.types import Checkpointer
 
+from slide2anki_core.graph.config import GraphConfig
 from slide2anki_core.model_adapters.base import BaseModelAdapter
 from slide2anki_core.schemas.cards import CardDraft
 from slide2anki_core.schemas.claims import Claim
@@ -20,30 +22,71 @@ class CardPipelineState(TypedDict, total=False):
     max_cards: int
     focus: dict
     custom_instructions: str
+    repair_attempts: int
+    max_repair_attempts: int
 
 
-def build_card_graph(adapter: BaseModelAdapter) -> StateGraph:
+def _needs_repair(state: CardPipelineState) -> str:
+    """Route to repair when critiqued cards remain."""
+    cards = state.get("cards", [])
+    attempts = state.get("repair_attempts", 0)
+    max_attempts = state.get("max_repair_attempts", 0)
+    if attempts >= max_attempts:
+        return "dedupe"
+
+    if any(card.flags or card.critique for card in cards):
+        return "repair_cards"
+    return "dedupe"
+
+
+def build_card_graph(
+    adapter: BaseModelAdapter,
+    config: GraphConfig | None = None,
+    checkpointer: Checkpointer | None = None,
+) -> StateGraph:
     """Build a pipeline that generates cards from claims.
 
     Args:
         adapter: Model adapter for LLM calls
+        config: Optional graph configuration
+        checkpointer: Optional LangGraph checkpointer
 
     Returns:
         Compiled StateGraph ready for invocation
     """
-    from slide2anki_core.graph.nodes import critique, dedupe, export, write_cards
+    from slide2anki_core.graph.nodes import (
+        critique,
+        dedupe,
+        export,
+        repair_cards,
+        write_cards,
+    )
+
+    resolved_config = config or GraphConfig()
 
     graph = StateGraph(CardPipelineState)
 
     graph.add_node("write_cards", write_cards.create_write_cards_node(adapter))
     graph.add_node("critique", critique.create_critique_node(adapter))
+    graph.add_node("repair_cards", repair_cards.create_repair_cards_node(adapter))
     graph.add_node("dedupe", dedupe.dedupe_node)
     graph.add_node("export", export.export_node)
 
+    def _seed_repair_state(state: CardPipelineState) -> dict[str, int]:
+        """Initialize repair counters for the card loop."""
+        return {
+            "repair_attempts": state.get("repair_attempts", 0),
+            "max_repair_attempts": resolved_config.max_card_repairs,
+        }
+
+    graph.add_node("repair_seed", _seed_repair_state)
+
     graph.set_entry_point("write_cards")
-    graph.add_edge("write_cards", "critique")
-    graph.add_edge("critique", "dedupe")
+    graph.add_edge("write_cards", "repair_seed")
+    graph.add_edge("repair_seed", "critique")
+    graph.add_conditional_edges("critique", _needs_repair)
+    graph.add_edge("repair_cards", "critique")
     graph.add_edge("dedupe", "export")
     graph.add_edge("export", END)
 
-    return graph.compile()
+    return graph.compile(checkpointer=checkpointer)

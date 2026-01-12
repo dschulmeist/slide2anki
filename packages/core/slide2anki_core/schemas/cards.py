@@ -1,7 +1,6 @@
 """Flashcard schemas."""
 
 from enum import Enum
-from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -39,7 +38,7 @@ class CardDraft(BaseModel):
         default_factory=list, description="Source evidence"
     )
     status: CardStatus = Field(CardStatus.PENDING, description="Review status")
-    critique: Optional[str] = Field(None, description="Critique feedback")
+    critique: str | None = Field(None, description="Critique feedback")
 
     def __hash__(self) -> int:
         return hash((self.front, self.back))
