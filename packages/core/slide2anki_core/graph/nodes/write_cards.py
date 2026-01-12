@@ -52,8 +52,19 @@ def _build_prompt(
     if max_cards and max_cards > 0:
         instructions.append(f"- Generate at most {max_cards} cards.")
     if focus:
-        focus_items = ", ".join(sorted(focus.keys()))
-        instructions.append(f"- Emphasize: {focus_items}.")
+        focus_items: list[str] = []
+        if isinstance(focus, dict):
+            focus_items = [
+                str(key).strip() for key, value in focus.items() if value
+            ]
+        elif isinstance(focus, (list, tuple, set)):
+            focus_items = [str(item).strip() for item in focus]
+        else:
+            focus_items = [str(focus).strip()]
+
+        focus_items = sorted({item for item in focus_items if item})
+        if focus_items:
+            instructions.append(f"- Emphasize: {', '.join(focus_items)}.")
     if custom_instructions:
         instructions.append(f"- {custom_instructions.strip()}")
 

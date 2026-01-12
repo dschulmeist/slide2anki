@@ -147,6 +147,10 @@ def run_deck_generation(job_id: str) -> dict[str, Any]:
                 )
             )
 
+            errors = [str(error) for error in result.get("errors", []) if error]
+            if errors:
+                raise RuntimeError(f"Card generation error: {errors[0]}")
+
             cards: list[CardDraft] = result.get("cards", [])
             if config and config.max_cards > 0:
                 cards = cards[: config.max_cards]

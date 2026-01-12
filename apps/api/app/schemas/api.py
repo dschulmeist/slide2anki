@@ -221,6 +221,12 @@ class CardRevisionResponse(BaseModel):
     created_at: datetime
 
 
+class CardRevisionListResponse(BaseModel):
+    """List response for card revisions."""
+
+    revisions: list[CardRevisionResponse]
+
+
 class SlideResponse(BaseModel):
     """Slide response payload."""
 

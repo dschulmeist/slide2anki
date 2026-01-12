@@ -7,7 +7,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight, Check, X, Flag } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 
-import { api, CardDraft, Deck, Slide } from '@/lib/api';
+import { api, CardDraft, CardRevision, Deck, Slide } from '@/lib/api';
 
 interface EvidenceBox {
   x: number;
@@ -64,8 +64,13 @@ export default function ReviewPage() {
   const [cards, setCards] = useState<CardDraft[]>([]);
   const [slides, setSlides] = useState<Slide[]>([]);
   const [deck, setDeck] = useState<Deck | null>(null);
+  const [revisions, setRevisions] = useState<CardRevision[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [draftFront, setDraftFront] = useState('');
+  const [draftBack, setDraftBack] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   /**
@@ -100,6 +105,20 @@ export default function ReviewPage() {
     }
   }, [deckId]);
 
+  /**
+   * Load revision history for a card draft.
+   */
+  const loadRevisions = useCallback(async (cardId: string) => {
+    try {
+      const history = await api.listCardRevisions(cardId);
+      setRevisions(history);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Failed to load revisions';
+      setErrorMessage(message);
+    }
+  }, []);
+
   useEffect(() => {
     loadReviewData();
   }, [loadReviewData]);
@@ -121,11 +140,25 @@ export default function ReviewPage() {
   }, [evidenceMeta, slides]);
 
   /**
+   * Sync local edit state and revisions when the current card changes.
+   */
+  useEffect(() => {
+    if (!currentCard) {
+      setRevisions([]);
+      return;
+    }
+    setDraftFront(currentCard.front);
+    setDraftBack(currentCard.back);
+    setIsEditing(false);
+    loadRevisions(currentCard.id);
+  }, [currentCard, loadRevisions]);
+
+  /**
    * Update card status locally and persist to the API.
    */
   const updateCardStatus = useCallback(
     async (status: 'approved' | 'rejected') => {
-      if (!currentCard) {
+      if (!currentCard || isEditing || isSaving) {
         return;
       }
       const updated = { status };
@@ -153,12 +186,73 @@ export default function ReviewPage() {
         setCurrentIndex(currentIndex + 1);
       }
     },
-    [cards, currentCard, currentIndex]
+    [cards, currentCard, currentIndex, isEditing, isSaving]
   );
 
-  const pendingCount = cards.filter(c => c.status === 'pending').length;
-  const approvedCount = cards.filter(c => c.status === 'approved').length;
-  const rejectedCount = cards.filter(c => c.status === 'rejected').length;
+  /**
+   * Begin editing the current card draft.
+   */
+  const startEditing = useCallback(() => {
+    if (!currentCard) {
+      return;
+    }
+    setDraftFront(currentCard.front);
+    setDraftBack(currentCard.back);
+    setIsEditing(true);
+  }, [currentCard]);
+
+  /**
+   * Cancel edits and restore saved card content.
+   */
+  const cancelEditing = useCallback(() => {
+    if (!currentCard) {
+      return;
+    }
+    setDraftFront(currentCard.front);
+    setDraftBack(currentCard.back);
+    setIsEditing(false);
+  }, [currentCard]);
+
+  /**
+   * Persist card edits and refresh revision history.
+   */
+  const saveEdits = useCallback(async () => {
+    if (!currentCard) {
+      return;
+    }
+    if (!draftFront.trim() || !draftBack.trim()) {
+      setErrorMessage('Front and back cannot be empty.');
+      return;
+    }
+
+    setIsSaving(true);
+    setErrorMessage(null);
+    try {
+      const updated = await api.updateCard(currentCard.id, {
+        front: draftFront.trim(),
+        back: draftBack.trim(),
+      });
+      setCards((prev) =>
+        prev.map((card) =>
+          card.id === currentCard.id
+            ? { ...card, front: updated.front, back: updated.back }
+            : card
+        )
+      );
+      setIsEditing(false);
+      await loadRevisions(currentCard.id);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Failed to save edits';
+      setErrorMessage(message);
+    } finally {
+      setIsSaving(false);
+    }
+  }, [currentCard, draftBack, draftFront, loadRevisions]);
+
+  const pendingCount = cards.filter((card) => card.status === 'pending').length;
+  const approvedCount = cards.filter((card) => card.status === 'approved').length;
+  const rejectedCount = cards.filter((card) => card.status === 'rejected').length;
 
   if (isLoading) {
     return (
@@ -196,7 +290,9 @@ export default function ReviewPage() {
             <a href="/decks" className="text-gray-500 hover:text-gray-700">
               <ChevronLeft className="w-5 h-5" />
             </a>
-            <span className="font-medium">Review Cards</span>
+            <span className="font-medium">
+              Review Cards{deck ? ` - ${deck.name}` : ''}
+            </span>
           </div>
           <div className="flex items-center gap-4 text-sm">
             <span className="text-gray-500">{pendingCount} pending</span>
@@ -264,22 +360,73 @@ export default function ReviewPage() {
 
           {/* Card content */}
           <div className="flex-1 space-y-4">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium text-gray-700">
+                Card Content
+              </span>
+              {isEditing ? (
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={saveEdits}
+                    disabled={isSaving}
+                    className="px-3 py-1.5 text-sm bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"
+                  >
+                    {isSaving ? 'Saving...' : 'Save'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={cancelEditing}
+                    disabled={isSaving}
+                    className="px-3 py-1.5 text-sm border rounded-lg disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={startEditing}
+                  className="text-sm text-primary-600 hover:text-primary-700"
+                >
+                  Edit
+                </button>
+              )}
+            </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Front
               </label>
-              <div className="p-3 bg-gray-50 rounded-lg border">
-                {currentCard.front}
-              </div>
+              {isEditing ? (
+                <textarea
+                  value={draftFront}
+                  onChange={(event) => setDraftFront(event.target.value)}
+                  rows={3}
+                  className="w-full p-3 bg-white rounded-lg border focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                />
+              ) : (
+                <div className="p-3 bg-gray-50 rounded-lg border">
+                  {currentCard.front}
+                </div>
+              )}
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Back
               </label>
-              <div className="p-3 bg-gray-50 rounded-lg border whitespace-pre-wrap">
-                {currentCard.back}
-              </div>
+              {isEditing ? (
+                <textarea
+                  value={draftBack}
+                  onChange={(event) => setDraftBack(event.target.value)}
+                  rows={4}
+                  className="w-full p-3 bg-white rounded-lg border focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                />
+              ) : (
+                <div className="p-3 bg-gray-50 rounded-lg border whitespace-pre-wrap">
+                  {currentCard.back}
+                </div>
+              )}
             </div>
 
             {/* Metadata */}
@@ -294,20 +441,51 @@ export default function ReviewPage() {
                 </span>
               )}
             </div>
+
+            <div className="border-t pt-4">
+              <h3 className="text-sm font-medium text-gray-700 mb-2">
+                Revision History
+              </h3>
+              {revisions.length === 0 ? (
+                <p className="text-xs text-gray-400">No revisions yet.</p>
+              ) : (
+                <div className="space-y-2 max-h-48 overflow-auto">
+                  {revisions.map((revision) => (
+                    <div
+                      key={revision.id}
+                      className="border rounded-lg p-2 text-xs text-gray-600"
+                    >
+                      <div className="flex items-center justify-between text-gray-400">
+                        <span>Revision {revision.revision_number}</span>
+                        <span>
+                          {(revision.edited_by || 'system').toString()} -{' '}
+                          {new Date(revision.created_at).toLocaleString()}
+                        </span>
+                      </div>
+                      <div className="mt-1 text-gray-600 whitespace-pre-wrap">
+                        {revision.front}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Actions */}
           <div className="flex items-center gap-3 pt-4 border-t">
             <button
               onClick={() => updateCardStatus('rejected')}
-              className="flex-1 flex items-center justify-center gap-2 px-4 py-2 border border-red-300 text-red-600 rounded-lg hover:bg-red-50"
+              disabled={isEditing || isSaving}
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-2 border border-red-300 text-red-600 rounded-lg hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <X className="w-5 h-5" />
               Reject
             </button>
             <button
               onClick={() => updateCardStatus('approved')}
-              className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+              disabled={isEditing || isSaving}
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Check className="w-5 h-5" />
               Approve

@@ -220,7 +220,14 @@ def run_markdown_build(job_id: str) -> dict[str, Any]:
                 )
             )
 
+            errors = [str(error) for error in result.get("errors", []) if error]
+            if errors:
+                raise RuntimeError(f"Markdown pipeline error: {errors[0]}")
+
             slides = result.get("slides", [])
+            if not slides:
+                raise RuntimeError("Markdown pipeline produced no slides")
+
             claims: list[Claim] = result.get("claims", [])
             blocks: list[MarkdownBlock] = result.get("markdown_blocks", [])
 

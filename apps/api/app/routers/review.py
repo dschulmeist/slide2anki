@@ -12,6 +12,8 @@ from app.schemas.api import (
     CardDraftListResponse,
     CardDraftResponse,
     CardDraftUpdate,
+    CardRevisionListResponse,
+    CardRevisionResponse,
     SlideListResponse,
     SlideResponse,
 )
@@ -67,30 +69,54 @@ async def update_card(
         raise HTTPException(status_code=404, detail="Card not found")
 
     update_data = updates.model_dump(exclude_unset=True)
+    should_version = any(
+        key in update_data for key in ("front", "back", "tags")
+    )
     for key, value in update_data.items():
         setattr(card, key, value)
 
-    revision_number = await db.execute(
-        select(func.max(models.CardRevision.revision_number)).where(
-            models.CardRevision.card_id == card.id
+    if should_version:
+        revision_number = await db.execute(
+            select(func.max(models.CardRevision.revision_number)).where(
+                models.CardRevision.card_id == card.id
+            )
         )
-    )
-    next_revision = (revision_number.scalar_one() or 0) + 1
+        next_revision = (revision_number.scalar_one() or 0) + 1
 
-    db.add(
-        models.CardRevision(
-            card_id=card.id,
-            revision_number=next_revision,
-            front=card.front,
-            back=card.back,
-            tags=card.tags or [],
-            edited_by="user",
+        db.add(
+            models.CardRevision(
+                card_id=card.id,
+                revision_number=next_revision,
+                front=card.front,
+                back=card.back,
+                tags=card.tags or [],
+                edited_by="user",
+            )
         )
-    )
 
     await db.commit()
     await db.refresh(card)
     return CardDraftResponse.model_validate(card)
+
+
+@router.get(
+    "/cards/{card_id}/revisions",
+    response_model=CardRevisionListResponse,
+)
+async def list_card_revisions(
+    card_id: UUID,
+    db: AsyncSession = Depends(get_db),
+) -> CardRevisionListResponse:
+    """List revision history for a card draft."""
+    result = await db.execute(
+        select(models.CardRevision)
+        .where(models.CardRevision.card_id == card_id)
+        .order_by(models.CardRevision.revision_number.desc())
+    )
+    revisions = result.scalars().all()
+    return CardRevisionListResponse(
+        revisions=[CardRevisionResponse.model_validate(r) for r in revisions]
+    )
 
 
 @router.get("/projects/{project_id}/slides", response_model=SlideListResponse)
