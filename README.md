@@ -4,12 +4,22 @@ slide2anki is a local-first tool that converts image-based lecture PDFs into hig
 
 ## What this project is trying to do
 
+- Ideally the user can dump all the documents he has (e.g. for a course all teh lecture slides, exercises and past exams etc.)
+- then the system consisting of several agents decomposes all that, converts it maybe into a markdown file, so all formulas etc. can be preserved. Diagrams may be replicated as ascii (A better path is to store image regions and reference them directly in markdown or as embedded images.)?
+- Then based on this comprehensive script, we create flashcards that cover as much content as possible (of course the user can decide and give instructions).
+- Later this comprehensiv markdown is stored in the backend as source of truth and if the user adds documents this markdown gets updated.  likely need versioned markdown snapshots + user edits tracked separately. 
+- The user can tehn review the created flashcards, and also suggest changes, select flashcards and request changes on a subset. 
+- The user can also see the markdown doc.
 - Treat slides as visual sources of knowledge, not plain text documents.
-- Extract atomic claims (definitions, facts, processes, relationships) using vision models.
-- Turn claims into focused, one-fact-per-card drafts with minimal wording.
+- Extract content and atomic claims (definitions, facts, processes, relationships) using vision models.
+- Turn claims into focused, one-fact-per-card drafts with minimal wording while retaianing all important information.
 - Critique and deduplicate cards before exporting.
 - Keep the user in the loop with a review UI that shows evidence regions.
 - Run locally without accounts, relying on the user’s own model endpoint and API key.
+
+LATER WORK:
+- deploy on the web with user accounts etc.
+- implement own flashcard study system similar to anki to study and review teh flashcards. Also include some AI based features in there.
 
 ## How the pipeline works
 
