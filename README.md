@@ -58,7 +58,7 @@ LATER WORK:
 - Docker and Docker Compose
 - Node.js 20+
 - Python 3.11+
-- A model endpoint and API key (OpenAI or Ollama)
+- A model endpoint and API key (configured in the web UI)
 
 ### One command (Docker full stack)
 
@@ -96,23 +96,35 @@ npm run dev
 
 # Install and run the API (in another terminal)
 cd apps/api
-uv pip install -e ".[dev]"
-uvicorn app.main:app --reload
+uv sync
+uv run uvicorn app.main:app --reload
 
 # Run the worker (in another terminal)
 cd workers/runner
-uv pip install -e ".[dev]"
-python -m runner.worker
+uv sync
+uv run python -m runner.worker
 ```
 
 ## Configuration
 
-Create a `.env` file in the root directory:
+### Model provider settings (recommended)
+
+Configure the model provider in the web UI:
+
+1. Open `http://localhost:3000/settings`
+2. Select `OpenRouter` (or another provider) + a model
+3. Enter the provider API key
+4. Click **Save Settings**
+
+These settings are stored in the local Postgres container so the worker can read them. The UI masks API keys after saving.
+
+To wipe local secrets + data, run `./infra/scripts/reset_db.sh` (this removes the Docker volumes).
+
+### Optional `.env` (only needed for local, non-Docker runs)
+
+If you run the API/worker outside Docker, create a `.env` file in the root directory:
 
 ```env
-OPENAI_API_KEY=sk-...
-OLLAMA_BASE_URL=http://localhost:11434
-
 POSTGRES_URL=postgresql+asyncpg://slide2anki:slide2anki@localhost:5432/slide2anki
 REDIS_URL=redis://localhost:6379
 MINIO_ENDPOINT=localhost:9000
@@ -155,8 +167,8 @@ slide2anki/
 ```bash
 ./tools/lint.sh
 
-cd packages/core && pytest
-cd apps/api && pytest
+cd packages/core && uv run pytest
+cd apps/api && uv run pytest
 cd apps/web && npm test
 ```
 

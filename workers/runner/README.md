@@ -34,4 +34,5 @@ Set environment variables (or use a `.env` file):
 - `DATABASE_URL` – PostgreSQL connection string
 - `REDIS_URL` – Redis connection string
 - `MINIO_ENDPOINT`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY`, `MINIO_BUCKET`
-- `OPENAI_API_KEY` or `OLLAMA_BASE_URL` for model inference
+- Model/provider settings are typically configured via the web UI at `/settings` and persisted in Postgres (the worker reads from `app_settings`).
+- If you run the worker outside the full Docker stack, you can still provide `OPENAI_API_KEY` / `OLLAMA_BASE_URL` as a fallback.
