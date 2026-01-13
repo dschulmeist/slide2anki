@@ -33,6 +33,11 @@ class Settings(BaseSettings):
     worker_concurrency: int = 2
     log_level: str = "INFO"
 
+    # Pipeline Configuration
+    # Use holistic pipeline (recommended) for higher quality document processing
+    # Set to False to use legacy per-slide extraction pipeline
+    use_holistic_pipeline: bool = True
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

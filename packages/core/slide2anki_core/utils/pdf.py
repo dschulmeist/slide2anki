@@ -35,8 +35,7 @@ def validate_pdf(data: bytes) -> bool:
     # Check magic bytes
     if not data[:4].startswith(PDF_MAGIC):
         raise PDFValidationError(
-            f"Invalid PDF: file does not start with PDF magic bytes. "
-            f"Got: {data[:4]!r}"
+            f"Invalid PDF: file does not start with PDF magic bytes. Got: {data[:4]!r}"
         )
 
     # Check for PDF EOF marker (optional but recommended)

@@ -61,6 +61,8 @@ def create_segment_node(
             Updated state with regions
         """
         slide: Slide | None = state.get("slide")
+        skip_simple_segmentation = state.get("skip_simple_segmentation", False)
+
         if not slide or not slide.image_data:
             return {
                 **state,
@@ -80,6 +82,14 @@ def create_segment_node(
                         text_snippet=slide.extracted_text[:200],
                     )
                 ],
+                "current_step": "segment",
+            }
+
+        # Fast mode: skip segmentation entirely, treat whole slide as one region
+        if skip_simple_segmentation:
+            return {
+                **state,
+                "regions": [_fallback_region()],
                 "current_step": "segment",
             }
 

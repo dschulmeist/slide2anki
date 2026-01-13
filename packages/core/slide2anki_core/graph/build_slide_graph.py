@@ -44,6 +44,21 @@ def _ignore_region(
     return existing if existing is not None else incoming
 
 
+def _keep_first_int(existing: int, incoming: int) -> int:
+    """Keep the first value for config fields that shouldn't change."""
+    return existing if existing else incoming
+
+
+def _keep_last_str(existing: str | None, incoming: str | None) -> str | None:
+    """Keep the latest value for progress tracking fields."""
+    return incoming if incoming else existing
+
+
+def _keep_first_bool(existing: bool, incoming: bool) -> bool:
+    """Keep the first value for boolean config fields."""
+    return existing if existing is not None else incoming
+
+
 class SlidePipelineState(TypedDict, total=False):
     """State passed through the slide extraction pipeline."""
 
@@ -53,8 +68,10 @@ class SlidePipelineState(TypedDict, total=False):
     # region: received from parallel region_workers, ignored at parent level
     region: Annotated[SlideRegion | None, _ignore_region]
     claims: Annotated[list[Claim], _merge_claims]
-    max_attempts: int
-    current_step: str
+    max_attempts: Annotated[int, _keep_first_int]
+    skip_verification: Annotated[bool, _keep_first_bool]
+    skip_simple_segmentation: Annotated[bool, _keep_first_bool]
+    current_step: Annotated[str, _keep_last_str]
     errors: Annotated[list[str], _merge_errors]
 
 
@@ -65,6 +82,7 @@ def _dispatch_regions(state: SlidePipelineState) -> list[Send]:
     if not slide:
         return []
     max_attempts = state.get("max_attempts", 0)
+    skip_verification = state.get("skip_verification", False)
     return [
         Send(
             "region_worker",
@@ -73,6 +91,7 @@ def _dispatch_regions(state: SlidePipelineState) -> list[Send]:
                 "region": region,
                 "attempt": 0,
                 "max_attempts": max_attempts,
+                "skip_verification": skip_verification,
             },
         )
         for region in regions
@@ -107,6 +126,8 @@ def build_slide_graph(
         return {
             **state,
             "max_attempts": resolved_config.max_claim_repairs,
+            "skip_verification": resolved_config.fast_mode,
+            "skip_simple_segmentation": resolved_config.skip_simple_segmentation,
         }
 
     graph.add_node("config", _inject_config)

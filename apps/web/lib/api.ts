@@ -418,16 +418,6 @@ class ApiClient {
   }
 
   /**
-   * Retry a failed or cancelled job.
-   * If the job has checkpoint data, it will resume from the last checkpoint.
-   */
-  async retryJob(jobId: string): Promise<Job> {
-    return this.request(`/api/v1/jobs/${jobId}/retry`, {
-      method: 'POST',
-    });
-  }
-
-  /**
    * List card drafts for a deck.
    */
   async listCards(deckId: string): Promise<CardDraft[]> {

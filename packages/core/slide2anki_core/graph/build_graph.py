@@ -25,6 +25,30 @@ def _merge_claims(existing: list[Claim], incoming: list[Claim]) -> list[Claim]:
     return [*existing, *incoming]
 
 
+def _keep_first_int(existing: int, incoming: int) -> int:
+    """Keep the first value for config fields that shouldn't change."""
+    return existing if existing else incoming
+
+
+def _keep_last_str(existing: str | None, incoming: str | None) -> str | None:
+    """Keep the latest value for progress tracking fields."""
+    return incoming if incoming else existing
+
+
+def _keep_max_int(existing: int, incoming: int) -> int:
+    """Keep the maximum value for progress fields."""
+    return max(existing or 0, incoming or 0)
+
+
+def _merge_errors(existing: list[str], incoming: list[str]) -> list[str]:
+    """Combine error lists, deduplicating."""
+    if not existing:
+        return list(incoming or [])
+    if not incoming:
+        return list(existing)
+    return list(dict.fromkeys([*existing, *incoming]))
+
+
 class PipelineState(TypedDict, total=False):
     """State passed through the pipeline."""
 
@@ -42,14 +66,14 @@ class PipelineState(TypedDict, total=False):
     # Output
     export_path: str
 
-    # Metadata
-    current_step: str
-    progress: int
-    errors: list[str]
+    # Metadata - need reducers for parallel slide workers
+    current_step: Annotated[str, _keep_last_str]
+    progress: Annotated[int, _keep_max_int]
+    errors: Annotated[list[str], _merge_errors]
 
     # Config
     use_region_extraction: bool
-    max_attempts: int
+    max_attempts: Annotated[int, _keep_first_int]
 
 
 def build_graph(
@@ -108,13 +132,19 @@ def build_graph(
                 logger.warning("No slides to dispatch for region extraction")
                 return []
 
-            logger.info(f"Dispatching {len(slides)} slides for region-aware extraction")
+            logger.info(
+                f"Dispatching {len(slides)} slides for extraction "
+                f"(fast_mode={resolved_config.fast_mode}, "
+                f"skip_segmentation={resolved_config.skip_simple_segmentation})"
+            )
             return [
                 Send(
                     "slide_worker",
                     {
                         "slide": slide,
                         "max_attempts": resolved_config.max_claim_repairs,
+                        "skip_verification": resolved_config.fast_mode,
+                        "skip_simple_segmentation": resolved_config.skip_simple_segmentation,
                     },
                 )
                 for slide in slides

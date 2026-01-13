@@ -42,6 +42,26 @@ def _ignore_slide(existing: Slide | None, incoming: Slide | None) -> Slide | Non
     return existing if existing is not None else incoming
 
 
+def _keep_last_str(existing: str | None, incoming: str | None) -> str | None:
+    """Keep the latest value for progress tracking fields."""
+    return incoming if incoming else existing
+
+
+def _keep_max_int(existing: int, incoming: int) -> int:
+    """Keep the maximum value for progress fields."""
+    return max(existing or 0, incoming or 0)
+
+
+def _keep_first_int(existing: int, incoming: int) -> int:
+    """Keep the first value for config fields."""
+    return existing if existing else incoming
+
+
+def _keep_first_bool(existing: bool, incoming: bool) -> bool:
+    """Keep the first value for boolean config fields."""
+    return existing if existing is not None else incoming
+
+
 class MarkdownPipelineState(TypedDict, total=False):
     """State passed through the markdown pipeline."""
 
@@ -54,17 +74,14 @@ class MarkdownPipelineState(TypedDict, total=False):
     claims: Annotated[list[Claim], _merge_claims]
     markdown_blocks: list[MarkdownBlock]
     markdown_content: str
-    current_step: str
-    progress: int
+    # Metadata - need reducers for parallel slide workers
+    current_step: Annotated[str, _keep_last_str]
+    progress: Annotated[int, _keep_max_int]
     errors: Annotated[list[str], _merge_errors]
-
-
-def _dispatch_slides(state: MarkdownPipelineState) -> list[Send]:
-    """Send each slide into the slide worker subgraph."""
-    slides = state.get("slides", [])
-    if not slides:
-        return []
-    return [Send("slide_worker", {"slide": slide}) for slide in slides]
+    # Config fields
+    max_attempts: Annotated[int, _keep_first_int]
+    skip_verification: Annotated[bool, _keep_first_bool]
+    skip_simple_segmentation: Annotated[bool, _keep_first_bool]
 
 
 def build_markdown_graph(
@@ -83,9 +100,34 @@ def build_markdown_graph(
         Compiled StateGraph ready for invocation
     """
     from slide2anki_core.graph.nodes import ingest, markdown, render
+    from slide2anki_core.utils.logging import get_logger
 
+    logger = get_logger(__name__)
     resolved_config = config or GraphConfig()
     slide_graph = build_slide_graph(adapter, resolved_config)
+
+    def _dispatch_slides(state: MarkdownPipelineState) -> list[Send]:
+        """Send each slide into the slide worker subgraph with config."""
+        slides = state.get("slides", [])
+        if not slides:
+            return []
+        logger.info(
+            f"Dispatching {len(slides)} slides "
+            f"(fast_mode={resolved_config.fast_mode}, "
+            f"skip_segmentation={resolved_config.skip_simple_segmentation})"
+        )
+        return [
+            Send(
+                "slide_worker",
+                {
+                    "slide": slide,
+                    "max_attempts": resolved_config.max_claim_repairs,
+                    "skip_verification": resolved_config.fast_mode,
+                    "skip_simple_segmentation": resolved_config.skip_simple_segmentation,
+                },
+            )
+            for slide in slides
+        ]
 
     graph = StateGraph(MarkdownPipelineState)
 

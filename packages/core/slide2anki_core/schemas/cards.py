@@ -1,4 +1,9 @@
-"""Flashcard schemas."""
+"""Flashcard schemas for Anki card generation.
+
+This module defines schemas for generated flashcards, including quality flags
+and review status. Cards are generated from extracted claims or markdown
+content and can be exported to Anki-compatible formats (TSV, APKG).
+"""
 
 from enum import Enum
 

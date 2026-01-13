@@ -1,6 +1,6 @@
 """Build the region-level extraction graph."""
 
-from typing import TypedDict
+from typing import Annotated, TypedDict
 
 from langgraph.graph import END, StateGraph
 
@@ -14,6 +14,20 @@ from slide2anki_core.utils.logging import get_logger
 logger = get_logger(__name__)
 
 
+def _keep_last_str(existing: str | None, incoming: str | None) -> str | None:
+    """Keep the latest value for progress tracking fields."""
+    return incoming if incoming else existing
+
+
+def _merge_errors(existing: list[str], incoming: list[str]) -> list[str]:
+    """Combine error lists, deduplicating."""
+    if not existing:
+        return list(incoming or [])
+    if not incoming:
+        return list(existing)
+    return list(dict.fromkeys([*existing, *incoming]))
+
+
 class RegionPipelineState(TypedDict, total=False):
     """State passed through the region extraction pipeline."""
 
@@ -25,19 +39,21 @@ class RegionPipelineState(TypedDict, total=False):
     needs_repair: bool
     failed_claims: list[int]
     repair_suggestions: dict[int, str]
-    skip_verification: bool  # Skip verify/repair for text-only slides
-    current_step: str
-    errors: list[str]
+    skip_verification: bool  # Skip verify/repair for text-only or fast mode
+    current_step: Annotated[str, _keep_last_str]
+    errors: Annotated[list[str], _merge_errors]
 
 
 def _should_verify(state: RegionPipelineState) -> str:
-    """Route to verify or skip directly to end for text-only slides."""
+    """Route to verify or skip directly to end for fast mode or text-only slides."""
+    # Fast mode: skip verification entirely
+    if state.get("skip_verification"):
+        logger.info("Skipping verification (fast_mode enabled)")
+        return END
     # Skip verification for text-only slides - text extraction is reliable
     slide = state.get("slide")
     if slide and getattr(slide, "is_text_only", False):
         logger.info(f"Skipping verification for text-only slide {slide.page_index}")
-        return END
-    if state.get("skip_verification"):
         return END
     return "verify_claims"
 

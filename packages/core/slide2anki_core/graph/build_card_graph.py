@@ -1,6 +1,6 @@
 """Build the card generation graph from markdown claims."""
 
-from typing import TypedDict
+from typing import Annotated, TypedDict
 
 from langgraph.graph import END, StateGraph
 from langgraph.types import Checkpointer
@@ -11,14 +11,33 @@ from slide2anki_core.schemas.cards import CardDraft
 from slide2anki_core.schemas.claims import Claim
 
 
+def _keep_last_str(existing: str | None, incoming: str | None) -> str | None:
+    """Keep the latest value for progress tracking fields."""
+    return incoming if incoming else existing
+
+
+def _keep_max_int(existing: int, incoming: int) -> int:
+    """Keep the maximum value for progress fields."""
+    return max(existing or 0, incoming or 0)
+
+
+def _merge_errors(existing: list[str], incoming: list[str]) -> list[str]:
+    """Combine error lists, deduplicating."""
+    if not existing:
+        return list(incoming or [])
+    if not incoming:
+        return list(existing)
+    return list(dict.fromkeys([*existing, *incoming]))
+
+
 class CardPipelineState(TypedDict, total=False):
     """State passed through the card generation pipeline."""
 
     claims: list[Claim]
     cards: list[CardDraft]
-    current_step: str
-    progress: int
-    errors: list[str]
+    current_step: Annotated[str, _keep_last_str]
+    progress: Annotated[int, _keep_max_int]
+    errors: Annotated[list[str], _merge_errors]
     max_cards: int
     focus: dict
     custom_instructions: str

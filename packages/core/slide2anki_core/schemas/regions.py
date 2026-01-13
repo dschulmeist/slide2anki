@@ -1,4 +1,12 @@
-"""Slide region schemas used for segmented extraction."""
+"""Slide region schemas used for segmented extraction.
+
+This module defines schemas for the legacy per-slide extraction pipeline
+that segments slides into regions (title, bullets, equations, diagrams, etc.)
+before extracting claims from each region.
+
+Note: The holistic pipeline does not use region segmentation. It processes
+entire documents as coherent units for better context and deduplication.
+"""
 
 from enum import Enum
 

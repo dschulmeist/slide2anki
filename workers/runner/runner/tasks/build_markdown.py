@@ -1,4 +1,24 @@
-"""Task for building the canonical markdown knowledge base."""
+"""Task for building the canonical markdown knowledge base.
+
+This module executes the document processing pipeline to extract educational
+content from uploaded PDF documents. It supports two pipeline modes:
+
+Holistic Pipeline (Default):
+    Processes documents as coherent units with chunked extraction (15% overlap).
+    Produces higher quality markdown with natural deduplication.
+    Controlled by `settings.use_holistic_pipeline` (default: True).
+
+Legacy Pipeline:
+    Per-slide extraction with region segmentation.
+    May produce redundant content on metadata-heavy documents.
+    Available by setting `use_holistic_pipeline=False`.
+
+The task persists results to the database including:
+- Rendered slide images (uploaded to MinIO)
+- Extracted claims (linked to source slides)
+- Markdown blocks (deduplicated across the project)
+- Markdown version snapshot
+"""
 
 from __future__ import annotations
 
@@ -9,7 +29,11 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from slide2anki_core.graph import build_markdown_graph
+from slide2anki_core.graph import (
+    HolisticConfig,
+    build_holistic_graph,
+    build_markdown_graph,
+)
 from slide2anki_core.schemas.claims import Claim
 from slide2anki_core.schemas.markdown import MarkdownBlock
 from sqlalchemy import create_engine, func, select
@@ -201,10 +225,35 @@ def run_markdown_build(job_id: str) -> dict[str, Any]:
             update_job_progress(db, job, 15, "Running markdown pipeline")
             adapter = build_model_adapter(db, models)
 
-            # Use checkpointer for resumable jobs
+            # Select pipeline: holistic (recommended) or legacy
+            # Holistic pipeline processes documents as coherent units for higher quality
+            use_holistic = getattr(settings, "use_holistic_pipeline", True)
+
             with get_checkpointer() as checkpointer:
-                graph = build_markdown_graph(adapter, checkpointer=checkpointer)
                 checkpoint_config = get_checkpoint_config(job_id)
+
+                if use_holistic:
+                    logger.info(
+                        "using_holistic_pipeline",
+                        job_id=job_id,
+                        document_id=str(document.id),
+                    )
+                    holistic_config = HolisticConfig(
+                        chunk_size=10,
+                        chunk_overlap=0.15,
+                    )
+                    graph = build_holistic_graph(
+                        adapter,
+                        config=holistic_config,
+                        checkpointer=checkpointer,
+                    )
+                else:
+                    logger.info(
+                        "using_legacy_pipeline",
+                        job_id=job_id,
+                        document_id=str(document.id),
+                    )
+                    graph = build_markdown_graph(adapter, checkpointer=checkpointer)
 
                 result = asyncio.run(
                     graph.ainvoke(

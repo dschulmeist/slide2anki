@@ -26,7 +26,7 @@ DEFAULT_MAX_WAIT = 30  # seconds
 # This prevents overwhelming the API with too many parallel requests
 # We store semaphores per event loop to avoid "bound to different event loop" errors
 _loop_semaphores: dict[int, asyncio.Semaphore] = {}
-DEFAULT_MAX_CONCURRENT_CALLS = 5
+DEFAULT_MAX_CONCURRENT_CALLS = 15
 
 
 def get_api_semaphore(
@@ -44,7 +44,9 @@ def get_api_semaphore(
         loop = asyncio.get_running_loop()
     except RuntimeError:
         # No running loop - create a new semaphore (caller should be in async context)
-        logger.warning("get_api_semaphore called outside event loop, creating new semaphore")
+        logger.warning(
+            "get_api_semaphore called outside event loop, creating new semaphore"
+        )
         return asyncio.Semaphore(max_concurrent)
 
     loop_id = id(loop)

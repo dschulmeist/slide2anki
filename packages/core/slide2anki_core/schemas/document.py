@@ -1,4 +1,12 @@
-"""Document and slide schemas."""
+"""Document and slide schemas for PDF processing.
+
+This module defines the core document and slide schemas used throughout
+both the holistic and legacy pipelines. Documents are PDFs being processed,
+and Slides represent individual pages rendered as images.
+
+The `is_text_only` flag enables optimization by skipping vision API calls
+for pages that contain only text (no diagrams, charts, or formulas).
+"""
 
 from pathlib import Path
 

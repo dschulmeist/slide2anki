@@ -4,8 +4,10 @@ A sophisticated document-to-flashcard pipeline powered by **multi-agent LangGrap
 
 ## Key Features
 
-- **Multi-Agent Pipeline**: Hierarchical LangGraph agents for extraction, generation, and quality control
+- **Holistic Document Processing**: Processes documents as coherent units with 15% overlapping chunks for context continuity
+- **Smart Image Handling**: Extracts images, classifies them (formula, diagram, code, table), and transcribes to appropriate formats
 - **Vision-First Processing**: Treats slides as visual documents, preserving diagrams, formulas, and layout
+- **Natural Deduplication**: Metadata and repeated content handled once, not per-slide
 - **Intelligent Optimization**: Automatic text-only page detection saves 30-60% on API costs
 - **Fault-Tolerant Execution**: PostgreSQL-backed checkpointing enables job resumption after failures
 - **Evidence Traceability**: Every flashcard links back to the exact slide region it came from
@@ -54,69 +56,81 @@ A sophisticated document-to-flashcard pipeline powered by **multi-agent LangGrap
 
 The core of slide2anki is a **hierarchical multi-agent system** built with LangGraph. This architecture enables complex document processing through composable, fault-tolerant graph execution.
 
-### Agent Hierarchy
+### Pipeline Modes
+
+slide2anki supports two extraction pipelines:
+
+**Holistic Pipeline (Default)**: Processes documents as coherent units with overlapping chunks. Produces higher quality output with natural deduplication and context preservation.
+
+**Legacy Pipeline**: Per-slide extraction with region segmentation. Available as fallback for specific use cases.
+
+### Holistic Pipeline Architecture
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│                        build_markdown_graph (Orchestrator)                   │
-│  Coordinates the full PDF → Markdown pipeline                                │
+│                     build_holistic_graph (Orchestrator)                      │
+│  Processes documents as coherent units with smart image handling             │
 ├──────────────────────────────────────────────────────────────────────────────┤
 │                                                                              │
-│   ┌─────────┐    ┌─────────┐    ┌─────────────────┐    ┌──────────┐          │
-│   │ ingest  │───▶│ render  │───▶│  slide_worker   │───▶│ markdown │          │
-│   │  node   │    │  node   │    │   (parallel)    │    │   node   │          │
-│   └─────────┘    └─────────┘    └────────┬────────┘    └──────────┘          │
-│                                          │                                   │
-│                         ┌────────────────┼────────────────┐                  │
-│                         ▼                ▼                ▼                  │
-│                  ┌────────────┐   ┌────────────┐   ┌────────────┐            │
-│                  │   Slide    │   │   Slide    │   │   Slide    │            │
-│                  │  Worker 1  │   │  Worker 2  │   │  Worker N  │            │
-│                  └─────┬──────┘   └─────┬──────┘   └─────┬──────┘            │
-│                        │                │                │                   │
-└────────────────────────┼────────────────┼────────────────┼───────────────────┘
-                         │                │                │
-           ┌─────────────┴────────────────┴────────────────┴─────────────┐
-           │                    build_slide_graph                        │
-           │  Per-slide extraction with region-aware processing          │
-           ├─────────────────────────────────────────────────────────────┤
-           │                                                             │
-           │   ┌─────────┐    ┌─────────────────┐                        │
-           │   │ segment │───▶│  region_worker  │                        │
-           │   │  node   │    │   (parallel)    │                        │
-           │   └─────────┘    └────────┬────────┘                        │
-           │                           │                                 │
-           │          ┌────────────────┼────────────────┐                │
-           │          ▼                ▼                ▼                │
-           │   ┌────────────┐   ┌────────────┐   ┌────────────┐          │
-           │   │  Region    │   │  Region    │   │  Region    │          │
-           │   │  Worker 1  │   │  Worker 2  │   │  Worker N  │          │
-           │   └────────────┘   └────────────┘   └────────────┘          │
-           │                                                             │
-           └─────────────────────────────────────────────────────────────┘
-                                        │
-           ┌────────────────────────────┴─────────────────────────────────┐
-           │                    build_region_graph                        │
-           │  Extract, verify, and repair claims from a single region     │
-           ├──────────────────────────────────────────────────────────────┤
-           │                                                              │
-           │   ┌─────────────┐    ┌────────────┐    ┌────────────┐        │
-           │   │   extract   │───▶│   verify   │───▶│   repair   │        │
-           │   │   region    │    │   claims   │    │   claims   │<------││
-           │   └─────────────┘    └────────────┘    └─────┬──────┘       ││
-           │                                              │ (retry loop) |│
-           │                                              └──────────────|│
-           └──────────────────────────────────────────────────────────────┘
+│   ┌─────────┐    ┌─────────┐    ┌─────────────┐    ┌──────────────┐          │
+│   │ ingest  │───▶│ render  │───▶│  extract    │───▶│   classify   │          │
+│   │  node   │    │  node   │    │   images    │    │    images    │          │
+│   └─────────┘    └─────────┘    └─────────────┘    └──────┬───────┘          │
+│                                                           │                  │
+│   ┌───────────────────────────────────────────────────────┘                  │
+│   │                                                                          │
+│   ▼                                                                          │
+│   ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌──────────────┐  │
+│   │ transcribe  │───▶│  extract    │───▶│   detect    │───▶│   assemble   │  │
+│   │   images    │    │  document   │    │  chapters   │    │   markdown   │  │
+│   └─────────────┘    └──────┬──────┘    └─────────────┘    └──────────────┘  │
+│                             │                                                │
+│          ┌──────────────────┼──────────────────┐                             │
+│          ▼                  ▼                  ▼                             │
+│   ┌────────────┐     ┌────────────┐     ┌────────────┐                       │
+│   │  Chunk 1   │     │  Chunk 2   │     │  Chunk N   │  (15% overlap)        │
+│   │ slides 1-10│     │ slides 9-18│     │slides N-M  │                       │
+│   └────────────┘     └────────────┘     └────────────┘                       │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Image Processing Pipeline
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        Image Processing Flow                                 │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│   Extract Images                    Classify Images                         │
+│   ┌────────────────────────┐       ┌────────────────────────────┐           │
+│   │ - Position detection   │──────▶│ - Formula detection        │           │
+│   │ - Size filtering       │       │ - Diagram identification   │           │
+│   │ - Repetition counting  │       │ - Code/table recognition   │           │
+│   │ - Header/footer filter │       │ - Logo/decorative filter   │           │
+│   └────────────────────────┘       └─────────────┬──────────────┘           │
+│                                                  │                          │
+│                                                  ▼                          │
+│                                    Transcribe Images                        │
+│                                    ┌────────────────────────────┐           │
+│                                    │ Formula → LaTeX ($$...$$)  │           │
+│                                    │ Code    → Code blocks      │           │
+│                                    │ Table   → Markdown table   │           │
+│                                    │ Diagram → Description      │           │
+│                                    └────────────────────────────┘           │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Graph Definitions
 
-| Graph | Purpose | Nodes | Concurrency |
-|-------|---------|-------|-------------|
-| `build_markdown_graph` | Orchestrates PDF → Markdown extraction | ingest → render → slide_worker → markdown | Slides processed in parallel |
-| `build_slide_graph` | Per-slide segmentation and extraction | config → segment → region_worker | Regions processed in parallel |
-| `build_region_graph` | Claim extraction with quality control | extract → verify → repair (loop) | Sequential with retry |
-| `build_card_graph` | Markdown → Flashcards generation | write_cards → critique → repair → dedupe | Sequential pipeline |
+| Graph | Purpose | Nodes | Mode |
+|-------|---------|-------|------|
+| `build_holistic_graph` | Document-level extraction with chunking | ingest → render → images → extract → chapters → assemble | Default |
+| `build_markdown_graph` | Legacy per-slide extraction | ingest → render → slide_worker → markdown | Fallback |
+| `build_slide_graph` | Per-slide segmentation (legacy) | config → segment → region_worker | Legacy |
+| `build_region_graph` | Region claim extraction (legacy) | extract → verify → repair (loop) | Legacy |
+| `build_card_graph` | Markdown → Flashcards generation | write_cards → critique → repair → dedupe | Both modes |
 
 ### State Management
 
@@ -191,68 +205,76 @@ def _analyze_page_content(pdf_data: bytes) -> list[tuple[bool, str | None]]:
 **Benefits:**
 - **30-60% cost reduction**: Text-only pages skip the vision model entirely
 - **Faster processing**: Text extraction is ~10x faster than vision inference
-- **Same quality**: Extracted text feeds into the same claim extraction prompts
+- **Same quality**: Extracted text feeds into the same extraction prompts
 
-### Phase 2: Hierarchical Extraction
+### Phase 2: Holistic Document Extraction (Default)
 
 ```
-Slide → Segment (Vision) → Regions → Extract Claims (Vision/Text) → Verify → Repair
+Document → Chunking (15% overlap) → Extract per Chunk → Merge → Deduplicate
 ```
 
-**Segmentation** identifies semantic regions on each slide:
+The holistic pipeline processes documents as coherent units rather than per-slide:
+
+**Chunking Strategy:**
 
 ```python
-SEGMENT_PROMPT = """Segment this slide into labeled regions.
-Return a JSON object with a "regions" array. Each region must include:
-- kind: title, bullets, table, equation, diagram, image, or other
-- bbox: normalized coordinates (0-1)
-- confidence: 0-1 confidence score
-"""
+class ChunkingConfig(BaseModel):
+    target_chunk_size: int = 10      # Slides per chunk
+    overlap_ratio: float = 0.15      # 15% overlap between chunks
+    min_chunk_size: int = 3
+    max_chunk_size: int = 20
+
+    def create_chunks(self, total_slides: int) -> list[DocumentChunk]:
+        """Create overlapping chunks for context continuity."""
 ```
 
-**Region Types:**
+**Benefits over per-slide extraction:**
 
-| Kind | Processing Strategy |
-|------|-------------------|
-| `title` | Extract as section header |
-| `bullets` | Extract each bullet as potential claim |
-| `table` | Structured data extraction |
-| `equation` | LaTeX formula extraction |
-| `diagram` | Visual relationship extraction |
-| `image` | Caption/context extraction |
+| Aspect | Per-Slide (Legacy) | Holistic (Default) |
+|--------|-------------------|-------------------|
+| Metadata handling | Repeated per slide | Mentioned once |
+| Context | Isolated | Preserved across slides |
+| API calls | Per region (~50+) | Per chunk (~2-4) |
+| Deduplication | Post-processing | Natural |
+| Quality | Variable | Consistent |
 
-**Claim Extraction** adapts to content type:
+**Image Processing:**
+
+Images are extracted, classified, and transcribed intelligently:
+
+| Image Type | Detection | Processing |
+|------------|-----------|------------|
+| **Formula** | Math symbols, equation layout | Transcribed to LaTeX (`$$E=mc^2$$`) |
+| **Code** | Syntax patterns, monospace | Transcribed to code blocks |
+| **Table** | Grid structure | Converted to markdown table |
+| **Diagram** | Shapes, arrows, flowcharts | Described in text |
+| **Logo** | Header/footer, repetition | Filtered out |
+| **Decorative** | Small size, edges | Filtered out |
+
+**Image Filtering Rules:**
 
 ```python
-# For pages with meaningful images → Vision model
-response = await adapter.extract_claims(
-    image_data=region_image,
-    prompt=EXTRACT_REGION_PROMPT,
-)
-
-# For text-only pages → Text model (cheaper, faster)
-if slide.is_text_only and slide.extracted_text:
-    prompt = EXTRACT_TEXT_PROMPT.format(text=slide.extracted_text)
-    response = await adapter.generate_structured(prompt=prompt)
+# Filter images based on position, size, and repetition
+header_threshold: float = 0.15   # Top 15% = likely branding
+footer_threshold: float = 0.15   # Bottom 15% = likely branding
+min_image_area: float = 0.05     # < 5% of slide = likely icon
+repetition_threshold: float = 0.5  # > 50% of slides = likely logo
 ```
 
-### Phase 3: Quality Control Loop
+### Phase 3: Chapter Detection & Organization
 
 ```
-Claims → Verify → [Invalid?] → Repair → Verify → [Still Invalid?] → Discard
-                                  ↑__________________|
-                                     (max 2 attempts)
+Raw Markdown → Detect Headers → Build Chapter Outline → Organize Content
 ```
 
-The `build_region_graph` implements a **self-healing extraction loop**:
+The pipeline detects chapter structure from:
+- Table of contents slides
+- Markdown headers in extracted content
+- Topic transitions identified by the model
 
-1. **Verify**: Check claims against quality criteria (specificity, evidence, format)
-2. **Repair**: LLM rewrites invalid claims with specific feedback
-3. **Retry**: Up to `max_claim_repairs` attempts (default: 2)
+### Phase 4: Markdown Assembly
 
-### Phase 4: Markdown Synthesis
-
-Claims are deduplicated and organized into canonical markdown blocks:
+Content is deduplicated and organized into canonical markdown blocks:
 
 ```python
 class MarkdownBlock(BaseModel):
@@ -522,13 +544,22 @@ slide2anki/
 │   └── core/                   # LangGraph pipeline (framework-agnostic)
 │       └── slide2anki_core/
 │           ├── graph/         # Graph builders and nodes
-│           │   ├── build_markdown_graph.py
-│           │   ├── build_slide_graph.py
-│           │   ├── build_region_graph.py
-│           │   ├── build_card_graph.py
-│           │   └── nodes/     # Individual node implementations
+│           │   ├── build_holistic_graph.py   # Default: document-level extraction
+│           │   ├── build_markdown_graph.py   # Legacy: per-slide extraction
+│           │   ├── build_card_graph.py       # Markdown → flashcards
+│           │   ├── holistic/  # Holistic pipeline nodes
+│           │   │   ├── extract_images.py     # Image extraction & filtering
+│           │   │   ├── classify_images.py    # Image type classification
+│           │   │   ├── transcribe_images.py  # Formula/code transcription
+│           │   │   ├── extract_document.py   # Chunked document extraction
+│           │   │   ├── detect_chapters.py    # Chapter structure detection
+│           │   │   └── assemble_markdown.py  # Final markdown assembly
+│           │   └── nodes/     # Legacy pipeline nodes
 │           ├── model_adapters/ # LLM provider adapters
 │           ├── schemas/       # Pydantic models
+│           │   ├── images.py  # Image processing schemas
+│           │   ├── chapters.py # Chapter and chunking schemas
+│           │   └── ...        # Core schemas
 │           └── utils/         # Helpers (retry, logging, PDF)
 ├── workers/
 │   └── runner/                 # Background job worker
@@ -581,6 +612,11 @@ slide2anki/
 - [x] Real-time progress streaming (SSE)
 - [x] APKG export with embedded images
 - [x] Evidence-linked card review UI
+- [x] Holistic document processing pipeline
+- [x] Smart image extraction and classification
+- [x] Formula transcription to LaTeX
+- [x] Chapter detection and organization
+- [x] Chunk-based processing with overlap
 
 ### Planned
 

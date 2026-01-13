@@ -1,4 +1,12 @@
-"""Claim and evidence schemas."""
+"""Claim and evidence schemas for knowledge extraction.
+
+This module defines schemas for extracted claims and their evidence linking
+back to source slides. Claims are atomic pieces of knowledge (definitions,
+facts, formulas, etc.) extracted from document content.
+
+Note: The holistic pipeline produces markdown directly rather than claims,
+but claims are still used for evidence traceability and card generation.
+"""
 
 from enum import Enum
 
